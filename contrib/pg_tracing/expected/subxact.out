@@ -1,0 +1,58 @@
+-- Enable full sampling
+SET pg_tracing.sample_rate = 1.0;
+-- Start a transaction with subxaction
+BEGIN;
+SAVEPOINT s1;
+INSERT INTO pg_tracing_test VALUES(generate_series(1, 2), 'aaa');
+SAVEPOINT s2;
+INSERT INTO pg_tracing_test VALUES(generate_series(1, 2), 'aaa');
+SAVEPOINT s3;
+SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+COMMIT;
+-- Check that subxact_count is correctly reported
+select span_operation, parameters, subxact_count, lvl FROM peek_ordered_spans;
+                          span_operation                          |         parameters         | subxact_count | lvl 
+------------------------------------------------------------------+----------------------------+---------------+-----
+ Parse                                                            |                            |             0 |   1
+ BEGIN;                                                           |                            |             0 |   1
+ ProcessUtility                                                   |                            |             0 |   2
+ Parse                                                            |                            |             0 |   1
+ SAVEPOINT $1;                                                    | $1 = s1                    |             0 |   1
+ ProcessUtility                                                   |                            |             0 |   2
+ Parse                                                            |                            |             0 |   1
+ INSERT INTO pg_tracing_test VALUES(generate_series($1, $2), $3); | $1 = 1, $2 = 2, $3 = 'aaa' |             0 |   1
+ Planner                                                          |                            |             0 |   2
+ ExecutorRun                                                      |                            |             0 |   2
+ Insert on pg_tracing_test                                        |                            |             1 |   3
+ ProjectSet                                                       |                            |             1 |   4
+ Result                                                           |                            |             1 |   5
+ Parse                                                            |                            |             1 |   1
+ SAVEPOINT $1;                                                    | $1 = s2                    |             1 |   1
+ ProcessUtility                                                   |                            |             1 |   2
+ Parse                                                            |                            |             1 |   1
+ INSERT INTO pg_tracing_test VALUES(generate_series($1, $2), $3); | $1 = 1, $2 = 2, $3 = 'aaa' |             1 |   1
+ Planner                                                          |                            |             1 |   2
+ ExecutorRun                                                      |                            |             1 |   2
+ Insert on pg_tracing_test                                        |                            |             2 |   3
+ ProjectSet                                                       |                            |             2 |   4
+ Result                                                           |                            |             2 |   5
+ Parse                                                            |                            |             2 |   1
+ SAVEPOINT $1;                                                    | $1 = s3                    |             2 |   1
+ ProcessUtility                                                   |                            |             2 |   2
+ Parse                                                            |                            |             2 |   1
+ SELECT $1;                                                       | $1 = 1                     |             2 |   1
+ Planner                                                          |                            |             2 |   2
+ ExecutorRun                                                      |                            |             2 |   2
+ Result                                                           |                            |             2 |   3
+ Parse                                                            |                            |             2 |   1
+ COMMIT;                                                          |                            |             2 |   1
+ ProcessUtility                                                   |                            |             2 |   2
+(34 rows)
+
+-- Cleaning
+CALL clean_spans();

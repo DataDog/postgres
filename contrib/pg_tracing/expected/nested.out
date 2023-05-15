@@ -1,0 +1,297 @@
+-- Create test function to sample
+CREATE OR REPLACE FUNCTION test_function_project_set(a int) RETURNS SETOF oid AS
+$BODY$
+BEGIN
+	RETURN QUERY SELECT oid from pg_class where oid = a;
+END;
+$BODY$
+LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION test_function_result(a int, b text) RETURNS void AS
+$BODY$
+BEGIN
+    INSERT INTO pg_tracing_test(a, b) VALUES (a, b);
+END;
+$BODY$
+LANGUAGE plpgsql;
+-- Trace a statement with a function call
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000051-0000000000000051-01'*/ select test_function_project_set(1);
+ test_function_project_set 
+---------------------------
+(0 rows)
+
+-- The test function call will generate the following spans (non exhaustive list):
+-- +---------------------------------------------------------------------------------------------------+
+-- | A: Select test_function_project_set(1);                                                                       |
+-- +-+--------++----------++----------------++--------------------------------------------------------++
+--   |B: Parse||C: Planner||D: ExecutorStart||E: ExecutorRun                                          |
+--   +--------++----------++----------------+++-----------------------------------------------------+-+
+--                                            |F: ProjectSet                                        |
+--                                            ++---------+---------+------------------------------+-+
+--                                             |G: Result|H: Parse | I: Select a from b where...  |
+--                                             +---------+---------+----+--------------+----------+
+--                                                                      |J: ExecutorRun|
+--                                                                      +--------------+
+-- Gather span_id, span start and span end of function call statement
+SELECT span_id AS span_a_id,
+        get_span_start(span_start) as span_a_start,
+        get_span_end(span_start) as span_a_end
+		from pg_tracing_peek_spans where parent_id='0000000000000051' and span_type!='Parse' \gset
+SELECT span_id AS span_e_id,
+        get_span_start(span_start) as span_e_start,
+        get_span_end(span_start) as span_e_end
+		from pg_tracing_peek_spans where parent_id=:'span_a_id' and span_type='Executor' and span_operation='ExecutorRun' \gset
+SELECT span_id AS span_f_id,
+        get_span_start(span_start) as span_f_start,
+        get_span_end(span_start) as span_f_end
+		from pg_tracing_peek_spans where parent_id=:'span_e_id' and span_type='ProjectSet' \gset
+SELECT span_id AS span_g_id,
+        get_span_start(span_start) as span_g_start,
+        get_span_end(span_start) as span_g_end
+		from pg_tracing_peek_spans where parent_id=:'span_f_id' and span_type='Result' \gset
+SELECT span_id AS span_h_id,
+        get_span_start(span_start) as span_h_start,
+        get_span_end(span_start) as span_h_end
+		from pg_tracing_peek_spans where parent_id=:'span_f_id' and span_type='Parse' \gset
+SELECT span_id AS span_i_id,
+        get_span_start(span_start) as span_i_start,
+        get_span_end(span_start) as span_i_end
+		from pg_tracing_peek_spans where parent_id=:'span_f_id' and span_type='Select query' \gset
+SELECT span_id AS span_j_id,
+        get_span_start(span_start) as span_j_start,
+        get_span_end(span_start) as span_j_end
+		from pg_tracing_peek_spans where parent_id=:'span_i_id' and span_operation='ExecutorRun' \gset
+-- Check that spans' start and end are within expection
+SELECT :span_a_start <= :span_e_start AS top_query_before_run,
+		:span_a_end >= :span_e_end AS top_ends_after_run_end,
+		:span_e_start <= :span_f_start AS top_run_starts_before_project,
+		:span_e_end >= :span_f_end AS top_run_ends_after_project_end,
+		:span_e_end >= :span_h_end AS top_run_ends_before_select_end,
+		:span_e_end >= :span_i_end AS top_run_ends_after_nested_run_end;
+ top_query_before_run | top_ends_after_run_end | top_run_starts_before_project | top_run_ends_after_project_end | top_run_ends_before_select_end | top_run_ends_after_nested_run_end 
+----------------------+------------------------+-------------------------------+--------------------------------+--------------------------------+-----------------------------------
+ t                    | t                      | t                             | t                              | t                              | t
+(1 row)
+
+SELECT
+		:span_g_end >= :span_h_start AS nested_result_ends_before_parse,
+		:span_h_end <= :span_i_start AS nested_parse_ends_before_select,
+		:span_j_start >= :span_i_start AS run_starts_after_parent_select,
+		:span_j_end <= :span_i_end AS run_ends_after_select_end;
+ nested_result_ends_before_parse | nested_parse_ends_before_select | run_starts_after_parent_select | run_ends_after_select_end 
+---------------------------------+---------------------------------+--------------------------------+---------------------------
+ t                               | t                               | t                              | t
+(1 row)
+
+-- Check that the root span is the longest one
+WITH max_end AS (select max(span_end) from pg_tracing_peek_spans)
+SELECT span_end = max_end.max from pg_tracing_peek_spans, max_end
+    where span_id = :'span_a_id';
+ ?column? 
+----------
+ t
+(1 row)
+
+-- Check that ExecutorRun is attached to the nested top span
+SELECT span_operation, deparse_info from pg_tracing_peek_spans where parent_id=:'span_j_id' order by span_operation;
+                   span_operation                   |         deparse_info         
+----------------------------------------------------+------------------------------
+ IndexOnlyScan using pg_class_oid_index on pg_class | Index Cond: (oid = '1'::oid)
+(1 row)
+
+-- Check tracking with top tracking
+SET pg_tracing.track = 'top';
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000052-0000000000000052-01'*/ select test_function_project_set(1);
+ test_function_project_set 
+---------------------------
+(0 rows)
+
+SELECT count(*) from pg_tracing_consume_spans where trace_id='00000000000000000000000000000052';
+ count 
+-------
+     6
+(1 row)
+
+-- Check tracking with no tracking
+SET pg_tracing.track = 'none';
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000053-0000000000000053-01'*/ select test_function_project_set(1);
+ test_function_project_set 
+---------------------------
+(0 rows)
+
+SELECT count(*) from pg_tracing_consume_spans where trace_id='00000000000000000000000000000053';
+ count 
+-------
+     0
+(1 row)
+
+-- Reset tracking setting
+SET pg_tracing.track TO DEFAULT;
+-- Create test procedure
+CREATE OR REPLACE PROCEDURE sum_one(i int) AS $$
+DECLARE
+  r int;
+BEGIN
+  SELECT (i + i)::int INTO r;
+END; $$ LANGUAGE plpgsql;
+-- Test tracking of procedure with utility tracking enabled
+SET pg_tracing.track_utility=on;
+/*traceparent='00-00000000000000000000000000000054-0000000000000054-01'*/ CALL sum_one(3);
+select span_operation, lvl FROM peek_ordered_spans where trace_id='00000000000000000000000000000054';
+   span_operation    | lvl 
+---------------------+-----
+ Parse               |   1
+ CALL sum_one($1);   |   1
+ ProcessUtility      |   2
+ Parse               |   3
+ SELECT (i + i)::int |   3
+ Planner             |   4
+ Planner             |   4
+ ExecutorRun         |   4
+ Result              |   5
+(9 rows)
+
+-- Test again with utility tracking disabled
+SET pg_tracing.track_utility=off;
+/*traceparent='00-00000000000000000000000000000055-0000000000000055-01'*/ CALL sum_one(10);
+select span_operation, lvl FROM peek_ordered_spans where trace_id='00000000000000000000000000000055';
+ span_operation | lvl 
+----------------+-----
+(0 rows)
+
+-- Create immutable function
+CREATE OR REPLACE FUNCTION test_immutable_function(a int) RETURNS oid
+AS 'SELECT oid from pg_class where oid = a;'
+LANGUAGE sql IMMUTABLE;
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000056-0000000000000056-01'*/ select test_immutable_function(1);
+ test_immutable_function 
+-------------------------
+                        
+(1 row)
+
+select span_operation, lvl FROM peek_ordered_spans where trace_id='00000000000000000000000000000056';
+           span_operation            | lvl 
+-------------------------------------+-----
+ Parse                               |   1
+ select test_immutable_function($1); |   1
+ Planner                             |   2
+ Planner                             |   2
+ ExecutorRun                         |   2
+ Result                              |   3
+(6 rows)
+
+-- Create function with generate series
+CREATE OR REPLACE FUNCTION test_generate_series(IN anyarray, OUT x anyelement)
+    RETURNS SETOF anyelement
+    LANGUAGE sql
+    AS 'select * from pg_catalog.generate_series(array_lower($1, 1), array_upper($1, 1), 1)';
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000057-0000000000000057-01'*/ select test_generate_series('{1,2,3,4}'::int[]) FROM (VALUES (1,2));
+ test_generate_series 
+----------------------
+                    1
+                    2
+                    3
+                    4
+(4 rows)
+
+SELECT span_id AS span_project_set_id,
+        get_span_start(span_start) as span_project_set_start,
+        get_span_end(span_start) as span_project_set_end
+		from pg_tracing_peek_spans where span_type='ProjectSet' \gset
+SELECT span_id AS span_result_id,
+        get_span_start(span_start) as span_result_start,
+        get_span_end(span_start) as span_result_end
+		from pg_tracing_peek_spans where parent_id=:'span_project_set_id' and span_type='Result' \gset
+SELECT span_id AS span_parse,
+        get_span_start(span_start) as span_parse_start,
+        get_span_end(span_start) as span_parse_end
+		from pg_tracing_peek_spans where parent_id=:'span_project_set_id' and span_type='Parse' \gset
+-- Check that spans' start and end are within expection
+SELECT :span_project_set_start <= :span_parse_start AS project_set_starts_before_parse,
+        :span_result_start <= :span_parse_start AS result_starts_before_parse,
+        :span_result_end <= :span_parse_start AS result_ends_before_parse,
+        :span_project_set_end >= :span_parse_end AS project_set_ends_after_parse;
+ project_set_starts_before_parse | result_starts_before_parse | result_ends_before_parse | project_set_ends_after_parse 
+---------------------------------+----------------------------+--------------------------+------------------------------
+ t                               | t                          | t                        | t
+(1 row)
+
+select span_operation, lvl FROM peek_ordered_spans where trace_id='00000000000000000000000000000057';
+                                     span_operation                                     | lvl 
+----------------------------------------------------------------------------------------+-----
+ Parse                                                                                  |   1
+ select test_generate_series($1::int[]) FROM (VALUES ($2,$3));                          |   1
+ Planner                                                                                |   2
+ ExecutorRun                                                                            |   2
+ ProjectSet                                                                             |   3
+ Result                                                                                 |   4
+ Parse                                                                                  |   4
+ select * from pg_catalog.generate_series(array_lower($1, $2), array_upper($1, $3), $4) |   4
+ Planner                                                                                |   5
+(9 rows)
+
+-- +---------------------------------------------------------------------------------------------------+
+-- | A: Select test_function(1);                                                                       |
+-- +-+--------++----------++----------------++--------------------------------------------------------++
+--   |B: Parse||C: Planner||D: ExecutorStart||E: ExecutorRun                                          |
+--   +--------++----------++----------------+++-----------------------------------------------------+-+
+--                                            |F: Result                                            |
+--                                            ++---------------+----------------------------------+-+
+--                                             |G: Parse       |     H: Insert INTO...            |
+--                                             +---------------+--------+--------------+----------+
+--                                                                      |I: ExecutorRun|
+--                                                                      +--------------+
+-- Check function with result node
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000058-0000000000000058-01'*/ select test_function_result(1, 'test');
+ test_function_result 
+----------------------
+ 
+(1 row)
+
+-- Gather span_id, span start and span end of function call statement
+SELECT span_id AS span_a_id,
+        get_span_start(span_start) as span_a_start,
+        get_span_end(span_start) as span_a_end
+		from pg_tracing_peek_spans where parent_id='0000000000000058' and span_type!='Parse' \gset
+SELECT span_id AS span_e_id,
+        get_span_start(span_start) as span_e_start,
+        get_span_end(span_start) as span_e_end
+		from pg_tracing_peek_spans where parent_id=:'span_a_id' and span_type='Executor' and span_operation='ExecutorRun' \gset
+SELECT span_id AS span_f_id,
+        get_span_start(span_start) as span_f_start,
+        get_span_end(span_start) as span_f_end
+		from pg_tracing_peek_spans where parent_id=:'span_e_id' and span_type='Result' \gset
+SELECT span_id AS span_g_id,
+        get_span_start(span_start) as span_g_start,
+        get_span_end(span_start) as span_g_end
+		from pg_tracing_peek_spans where parent_id=:'span_f_id' and span_type='Parse' \gset
+SELECT span_id AS span_h_id,
+        get_span_start(span_start) as span_h_start,
+        get_span_end(span_start) as span_h_end
+		from pg_tracing_peek_spans where parent_id=:'span_f_id' and span_type='Insert query' \gset
+-- Check that parse span is correctly positioned
+SELECT :span_g_start >= :span_f_start AS parse_start_after_result,
+		:span_g_end <= :span_f_end AS parse_ends_before_result,
+		:span_g_end <= :span_h_start AS parse_ends_before_insert_node;
+ parse_start_after_result | parse_ends_before_result | parse_ends_before_insert_node 
+--------------------------+--------------------------+-------------------------------
+ t                        | t                        | t
+(1 row)
+
+select span_operation, lvl FROM peek_ordered_spans where trace_id='00000000000000000000000000000058';
+                 span_operation                  | lvl 
+-------------------------------------------------+-----
+ Parse                                           |   1
+ select test_function_result($1, $2);            |   1
+ Planner                                         |   2
+ ExecutorRun                                     |   2
+ Result                                          |   3
+ Parse                                           |   4
+ INSERT INTO pg_tracing_test(a, b) VALUES (a, b) |   4
+ Planner                                         |   5
+ ExecutorRun                                     |   5
+ Insert on pg_tracing_test                       |   6
+ Result                                          |   7
+(11 rows)
+
+-- Cleanup
+CALL clean_spans();
