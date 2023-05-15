@@ -236,6 +236,10 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 		return;
 
 	query_str = pstate->p_sourcetext;
+	// 00 -> version
+	// 00000000000000007ed39623a1d7b2d2 -> traceid
+	// 7ed39623a1d7b2d2 -> spanid parent
+	// 01 -> sampled
     // /*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT count(*) from pgbench_accounts
 	for (size_t i = 0; i < strlen(expected_start); i++) {
 		if (query_str[i] != expected_start[i]) {
