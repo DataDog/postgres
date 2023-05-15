@@ -18,8 +18,8 @@ SELECT traces from pg_tracing_info;
 (1 row)
 
 SELECT trace_id, parent_id, resource from pg_tracing_spans;
-    trace_id    |      parent_id      |   resource    
-----------------+---------------------+---------------
- 93842528390208 | 9138813148648157906 | ExecutorStart
+      trace_id       |      parent_id      |   resource    
+---------------------+---------------------+---------------
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
 (1 row)
 
