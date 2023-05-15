@@ -28,7 +28,8 @@ tests += {
   'bd': meson.current_build_dir(),
   'regress': {
 	'sql': [
-	  'select'
+	  'select',
+      'select_big'
     ],
 	'regress_args': ['--temp-config', files('pg_tracing.conf')],
   },

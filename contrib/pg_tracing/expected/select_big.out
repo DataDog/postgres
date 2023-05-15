@@ -1,0 +1,167 @@
+CREATE EXTENSION pg_tracing;
+ERROR:  extension "pg_tracing" already exists
+SELECT pg_tracing_reset();
+ pg_tracing_reset 
+------------------
+ 
+(1 row)
+
+SELECT traces from pg_tracing_info;
+ traces 
+--------
+      0
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+/*dddbs='postgres.db',traceparent='00-00000000000000007ed39623a1d7b2d2-7ed39623a1d7b2d2-01'*/ SELECT 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+SELECT trace_id, parent_id, resource from pg_tracing_spans;
+      trace_id       |      parent_id      |   resource    
+---------------------+---------------------+---------------
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+ 9138813148648157906 | 9138813148648157906 | ExecutorStart
+(22 rows)
+

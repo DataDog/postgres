@@ -211,6 +211,8 @@ add_span(span *new_span)
 		SpinLockAcquire(&s->mutex);
 		s->spans[s->end_span] = *new_span;
 		s->end_span++;
+        if(s->end_span >= pg_tracing_max)
+            s->end_span = 0;
 		s->stats.spans++;
 		SpinLockRelease(&s->mutex);
 	}
@@ -362,6 +364,7 @@ pg_tracing_spans(PG_FUNCTION_ARGS)
 {
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	span span;
+    int span_limit;
 
 	if (!pgtracing)
 		ereport(ERROR,
@@ -373,7 +376,8 @@ pg_tracing_spans(PG_FUNCTION_ARGS)
 	{
 		volatile pgTracingSharedStats *s = (volatile pgTracingSharedStats *) pgtracing;
 		SpinLockAcquire(&s->mutex);
-		for (int i = s->start_span; i < s->end_span; i++) {
+        span_limit = s->stats.spans > pg_tracing_max ? pg_tracing_max : s->stats.spans;
+		for (int i = s->start_span; i < span_limit; i++) {
 			span = s->spans[i];
 			add_result_span(rsinfo, &span);
 		}
