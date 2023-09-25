@@ -2,8 +2,7 @@
 SET pg_tracing.sample_rate = 0.0;
 SET pg_tracing.caller_sample_rate = 1.0;
 /*dddbs='postgres.db',traceparent='00-00000000000000000000000000000001-0000000000000001-01'*/ CREATE TABLE IF NOT EXISTS pg_tracing_test_table_with_constraint (a int, b char(20), CONSTRAINT PK_tracing_test PRIMARY KEY (a));
-/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000002-0000000000000002-01'*/ INSERT INTO pg_tracing_test_table_with_constraint VALUES(1, 'aaa');
--- Check generated spans
+-- Check create statement spans
 SELECT name, resource from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
       name      |                                                             resource                                                              
 ----------------+-----------------------------------------------------------------------------------------------------------------------------------
@@ -15,5 +14,41 @@ SELECT name, resource from pg_tracing_consume_spans where trace_id=1 order by sp
  ProcessUtility | ProcessUtility
  Utility        | CREATE TABLE IF NOT EXISTS pg_tracing_test_table_with_constraint (a int, b char(20), CONSTRAINT PK_tracing_test PRIMARY KEY (a));
  ProcessUtility | ProcessUtility
+(8 rows)
+
+-- Simple insertion
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000001-0000000000000001-01'*/ INSERT INTO pg_tracing_test_table_with_constraint VALUES(1, 'aaa');
+-- Check insert spans
+SELECT name, resource from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
+    name    |                             resource                              
+------------+-------------------------------------------------------------------
+ Insert     | INSERT INTO pg_tracing_test_table_with_constraint VALUES($1, $2);
+ Parse      | Parse
+ Post Parse | Post Parse
+ Planner    | Planner
+ Executor   | Start
+ Executor   | Run
+ Insert     | Insert on pg_tracing_test_table_with_constraint
+ Result     | Result
+ Executor   | Finish
+ Executor   | End
+(10 rows)
+
+-- Trigger constraint violation
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000001-0000000000000001-01'*/ INSERT INTO pg_tracing_test_table_with_constraint VALUES(1, 'aaa');
+ERROR:  duplicate key value violates unique constraint "pk_tracing_test"
+DETAIL:  Key (a)=(1) already exists.
+-- Check violation spans
+SELECT name, resource, sql_error_code from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
+    name    |                             resource                              | sql_error_code 
+------------+-------------------------------------------------------------------+----------------
+ Insert     | INSERT INTO pg_tracing_test_table_with_constraint VALUES($1, $2); | 23505
+ Parse      | Parse                                                             | 00000
+ Post Parse | Post Parse                                                        | 00000
+ Planner    | Planner                                                           | 00000
+ Executor   | Start                                                             | 00000
+ Executor   | Run                                                               | 23505
+ Insert     | Insert on pg_tracing_test_table_with_constraint                   | 23505
+ Result     | Result                                                            | 23505
 (8 rows)
 

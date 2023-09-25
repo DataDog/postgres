@@ -17,4 +17,4 @@ SELECT name, resource from pg_tracing_consume_spans where trace_id=1 order by sp
 /*dddbs='postgres.db',traceparent='00-00000000000000000000000000000001-0000000000000001-01'*/ INSERT INTO pg_tracing_test_table_with_constraint VALUES(1, 'aaa');
 
 -- Check violation spans
-SELECT name, resource from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
+SELECT name, resource, sql_error_code from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
