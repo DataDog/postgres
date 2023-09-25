@@ -142,7 +142,7 @@ select resource, parameters from pg_tracing_consume_spans order by span_start, s
  SET pg_tracing.sample_rate = 0.0; | 
  Parse                             | 
  Post Parse                        | 
- SET pg_tracing.sample_rate = 0.0; | 
+ ProcessUtility                    | 
  SELECT $1;                        | $1 = 1
  Parse                             | 
  Post Parse                        | 

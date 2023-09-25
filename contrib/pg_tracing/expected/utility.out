@@ -1,4 +1,4 @@
--- Some utility functions
+-- Some helper functions
 CREATE OR REPLACE FUNCTION get_span_start_ns(time_start timestamptz, start_ns smallint) RETURNS bigint AS
 $BODY$
 BEGIN
@@ -130,14 +130,14 @@ select resource, parameters from pg_tracing_peek_spans order by span_start, span
  PREPARE test_prepared_one_param_2 (integer) AS SELECT $1; | 
  Parse                                                     | 
  Post Parse                                                | 
- PREPARE test_prepared_one_param_2 (integer) AS SELECT $1; | 
+ ProcessUtility                                            | 
  PREPARE test_prepared_one_param_2 (integer) AS SELECT $1; | 
  Parse                                                     | 
  Post Parse                                                | 
  EXECUTE test_prepared_one_param_2(100);                   | 
  Parse                                                     | 
  Post Parse                                                | 
- EXECUTE test_prepared_one_param_2(100);                   | 
+ ProcessUtility                                            | 
  PREPARE test_prepared_one_param_2 (integer) AS SELECT $1; | 
  Planner                                                   | 
  Start                                                     | 
@@ -177,11 +177,11 @@ select resource, parameters from pg_tracing_peek_spans order by span_start, span
  SET plan_cache_mode='force_generic_plan';               | 
  Parse                                                   | 
  Post Parse                                              | 
- SET plan_cache_mode='force_generic_plan';               | 
+ ProcessUtility                                          | 
  EXECUTE test_prepared_one_param(200);                   | 
  Parse                                                   | 
  Post Parse                                              | 
- EXECUTE test_prepared_one_param(200);                   | 
+ ProcessUtility                                          | 
  PREPARE test_prepared_one_param (integer) AS SELECT $1; | 
  Start                                                   | 
  Run                                                     | 
@@ -207,7 +207,7 @@ select resource, parameters, sql_error_code from pg_tracing_consume_spans order 
  CREATE EXTENSION pg_tracing; |            | 42710
  Parse                        |            | 00000
  Post Parse                   |            | 00000
- CREATE EXTENSION pg_tracing; |            | 42710
+ ProcessUtility               |            | 42710
 (4 rows)
 
 -- Cleanup

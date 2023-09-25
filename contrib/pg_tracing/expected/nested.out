@@ -122,7 +122,7 @@ SELECT resource from pg_tracing_consume_spans order by span_start, span_start_ns
  CALL sum_one(3);
  Parse
  Post Parse
- CALL sum_one(3);
+ ProcessUtility
  Parse
  SELECT (i + i)::int
  Post Parse
