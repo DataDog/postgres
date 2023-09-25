@@ -1067,10 +1067,15 @@ handle_pg_error(int span_index, QueryDesc *queryDesc)
 	top_span->sql_error_code = sql_error_code;
 
 	end_span_ns = get_current_ns();
-	/* End current span, ongoing top spans and tracing */
-	for (int i = 0; i <= exec_nested_level; i++)
-		end_top_span(i, end_span_ns);
-	end_span(span, &end_span_ns);
+
+	/* End all ongoing spans */
+	for (int i = 0; i < current_trace_spans->end; i++) {
+		span = get_span_from_index(i);
+		if (span->ended == false)
+			end_span(span, &end_span_ns);
+	}
+
+	/* End tracing */
 	end_tracing(&end_span_ns);
 }
 
@@ -1937,7 +1942,9 @@ create_span_node(PlanState *planstate, planstateTraceContext * planstateTraceCon
 		 * error handler. Stop the node instrumentation to get the latest
 		 * known state.
 		 */
-		InstrStopNode(planstate->instrument, planstate->state->es_processed);
+		if (!INSTR_TIME_IS_ZERO(planstate->instrument->starttime))
+			/* Don't stop the node if it wasn't started */
+			InstrStopNode(planstate->instrument, planstate->state->es_processed);
 		InstrEndLoop(planstate->instrument);
 		span->sql_error_code = planstateTraceContext->sql_error_code;
 	}
