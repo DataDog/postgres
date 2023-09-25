@@ -35,6 +35,7 @@ tests += {
 	'sql': [
 	  'utility',
 	  'select',
+	  'insert',
 	  'sample',
 	  'subxact',
       'reset',
