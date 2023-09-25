@@ -207,7 +207,7 @@ typedef struct pgTracingPerLevelBuffer
 {
 	int			top_span_index; /* Index of the top span in the
 								 * current_trace_spans buffer */
-	uint64		executor_id;	/* Span id of executor run spans by nested
+	uint64		executor_run_id;	/* Span id of executor run spans by nested
 								 * level Executor run is used as parent for
 								 * spans generated from planstate */
 	uint64_t	query_id;		/* Query id by nested level when available */
@@ -761,7 +761,7 @@ process_query_desc(QueryDesc *queryDesc, int sql_error_code)
 	{
 		Bitmapset  *rels_used = NULL;
 		planstateTraceContext planstateTraceContext;
-		uint64		parent_id = per_level_buffers[exec_nested_level].executor_id;
+		uint64		parent_id = per_level_buffers[exec_nested_level].executor_run_id;
 
 		/* Prepare the planstate context for deparsing */
 		planstateTraceContext.rtable_names = select_rtable_names_for_explain(queryDesc->plannedstmt->rtable, rels_used);
@@ -1391,7 +1391,11 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	{
 		Span	   *parse_span = NULL;
 
-		/* We don't have a precise time for parse end, estimate it */
+		/*
+		* We don't have a precise time for parse end, estimate it
+		*
+		* TODO: Can we get a more precise start of parse
+		*/
 		int64		end_parse_ns = start_post_parse_ns - 1000;
 		int			parse_index = get_index_from_trace_spans();
 
@@ -1578,7 +1582,7 @@ pg_tracing_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 		 * Executor run is used as the parent's span for nodes, store its' id
 		 * in the per level buffer.
 		 */
-		per_level_buffers[exec_nested_level].executor_id = executor_run_span->span_id;
+		per_level_buffers[exec_nested_level].executor_run_id = executor_run_span->span_id;
 
 		/*
 		 * If this query starts parallel worker, push the trace context for
@@ -1622,13 +1626,24 @@ static void
 pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 {
 	int			span_index = -1;
-	Span	   *span = NULL;
+	int			previous_top_span_index = -1;
 
 	if (current_trace.sampled > 0 && pg_tracing_enabled(exec_nested_level))
 	{
+		Span	   *executor_finish_span = NULL;
+		int64 start_span_ns = get_current_ns();
+
 		span_index = get_index_from_trace_spans();
-		span = get_span_from_index(span_index);
-		begin_span(span, SPAN_EXECUTOR_FINISH, &current_trace, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, NULL, exec_nested_level);
+		executor_finish_span = get_span_from_index(span_index);
+		begin_span(executor_finish_span, SPAN_EXECUTOR_FINISH, &current_trace, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
+
+		/*
+		 * ExecutorFinish may create nested queries when executing triggers.
+		 * We set ExecutorFinish span as the top queries for this.
+		*/
+		previous_top_span_index = per_level_buffers[exec_nested_level].top_span_index;
+		set_top_span(exec_nested_level, span_index);
+		nested_query_start_ns = start_span_ns + 1000;
 	}
 
 	exec_nested_level++;
@@ -1648,7 +1663,11 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 	PG_END_TRY();
 	exec_nested_level--;
 
-	end_span_index(span_index, NULL);
+	if (span_index != -1) {
+		/* Restore previous top queries */
+		set_top_span(exec_nested_level, previous_top_span_index);
+		end_span_index(span_index, NULL);
+	}
 }
 
 /*
@@ -1684,6 +1703,12 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 	if (executor_end_index > -1)
 	{
 		int64		end_span_ns = get_current_ns();
+		/*
+		 * We may go through multiple statement nested in a
+		 * single ExecutorFinish (multiple triggers) so we need to
+		 * update the nested_start.
+		*/
+		nested_query_start_ns = end_span_ns + 1000;
 
 		/* End top span, executor_end span and tracing */
 		end_top_span(exec_nested_level, end_span_ns);
