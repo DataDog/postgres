@@ -13,7 +13,7 @@ DATA = pg_tracing--1.0.sql
 PGFILEDESC = "pg_tracing - Distributed tracing for postgres"
 
 REGRESS_OPTS = --temp-config $(top_srcdir)/contrib/pg_tracing/pg_tracing.conf
-REGRESS = utility select sample subxact reset nested wal parallel cleanup
+REGRESS = utility select insert sample subxact reset nested wal parallel cleanup
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
