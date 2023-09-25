@@ -902,6 +902,8 @@ check_query_sampled(ParseState *pstate, const ParamListInfo params)
 	 * and executor run. If no sampling flag was extracted from SQLCommenter
 	 * and we've already seen this statement (using statement_start ts), don't
 	 * try to apply sample rate and exit.
+	 *
+	 * TODO: Can we use commandId?
 	 */
 	statement_start_ts = GetCurrentStatementStartTimestamp();
 	if (current_trace.sampled == 0 && last_statement_check_for_sampling == statement_start_ts)
@@ -937,8 +939,12 @@ adjust_file_offset(Span * span, Size file_position)
  * Get the start time for a new top span
  */
 static int64
-get_top_span_start(int64 *start_time_ns)
+get_top_span_start(bool in_utility_stmt, int64 *start_time_ns)
 {
+	if (in_utility_stmt) {
+		Assert(start_time_ns != NULL);
+		return *start_time_ns;
+	}
 	if (exec_nested_level == 0)
 	{
 		/* For the top span of parallel worker, we get the current ns */
@@ -1026,7 +1032,10 @@ end_tracing(const int64 *end_span_ns)
 /*
  * When we catch an error (timeout, cancel query), we need to flag the ongoing
  * span with an error, send current spans in the shared buffer and clean
- * our memory context
+ * our memory context.
+ *
+ * We provide the ongoing span index where the error was caught to attach the
+ * sql error code to it.
  */
 static void
 handle_pg_error(int span_index, QueryDesc *queryDesc)
@@ -1212,6 +1221,7 @@ add_worker_name_to_trace_buffer()
 static void
 begin_top_span(Span * top_span, CmdType commandType,
 			   const Query *query, const JumbleState *jstate,
+			   const PlannedStmt *pstmt,
 			   const char *query_text, int64 start_time_ns)
 {
 	int			query_len;
@@ -1260,9 +1270,10 @@ begin_top_span(Span * top_span, CmdType commandType,
 		{
 			query_len = query->stmt_len;
 			stmt_location = query->stmt_location;
-		}
-		else
-		{
+		} else if (pstmt != NULL && pstmt->stmt_location != -1 && pstmt->stmt_len > 0) {
+			query_len = pstmt->stmt_len;
+			stmt_location = pstmt->stmt_location;
+		} else {
 			query_len = strlen(query_text);
 			stmt_location = 0;
 		}
@@ -1276,17 +1287,19 @@ begin_top_span(Span * top_span, CmdType commandType,
  * If the top span already exists for the current nested level, this has no effect.
  */
 static int64
-initialize_trace_level_and_top_span(CmdType commandType, Query *query, JumbleState *jstate, const char *query_text, int64 *start_time_ns)
+initialize_trace_level_and_top_span(CmdType commandType, Query *query, JumbleState *jstate, const PlannedStmt *pstmt, const char *query_text, int64 *start_time_ns)
 {
 	bool		new_nested_level = initialize_trace_level();
-	int64		top_span_start_ns = get_top_span_start(start_time_ns);
+	int64		top_span_start_ns;
 	Span	   *current_top = get_top_span_for_nested_level(exec_nested_level);
+	bool in_utility_stmt = pstmt != NULL;
 
+	top_span_start_ns = get_top_span_start(in_utility_stmt, start_time_ns);
 	/* current_trace_spans buffer should have been allocated */
 	Assert(current_trace_spans != NULL);
 	if (new_nested_level)
 	{
-		begin_top_span(current_top, commandType, query, jstate, query_text, top_span_start_ns);
+		begin_top_span(current_top, commandType, query, jstate, pstmt, query_text, top_span_start_ns);
 	}
 	else if (current_top->ended == true)
 	{
@@ -1298,7 +1311,7 @@ initialize_trace_level_and_top_span(CmdType commandType, Query *query, JumbleSta
 		Span	   *span = get_span_from_index(span_index);
 
 		set_top_span(exec_nested_level, span_index);
-		begin_top_span(span, commandType, query, jstate, query_text, top_span_start_ns);
+		begin_top_span(span, commandType, query, jstate, pstmt, query_text, top_span_start_ns);
 	}
 	return top_span_start_ns;
 }
@@ -1358,7 +1371,7 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 * Either we're inside a nested sampled query or we've parsed a query with
 	 * the sampled flag, start a new level with a top span
 	 */
-	top_span_start_ns = initialize_trace_level_and_top_span(query->commandType, query, jstate, pstate->p_sourcetext, &start_post_parse_ns);
+	top_span_start_ns = initialize_trace_level_and_top_span(query->commandType, query, jstate, NULL, pstate->p_sourcetext, &start_post_parse_ns);
 
 	parent_id = get_parent_id(exec_nested_level);
 	Assert(parent_id > 0);
@@ -1429,7 +1442,7 @@ pg_tracing_planner_hook(Query *query,
 	 * span in this case.
 	 */
 	if (current_trace.sampled == 1 && pg_tracing_enabled(plan_nested_level + exec_nested_level))
-		initialize_trace_level_and_top_span(query->commandType, query, NULL, query_string, NULL);
+		initialize_trace_level_and_top_span(query->commandType, query, NULL, NULL, query_string, NULL);
 
 	/* Start planner span */
 	span_planner_index = get_index_from_trace_spans();
@@ -1483,24 +1496,25 @@ pg_tracing_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	int			executor_start_span_index = -1;
 	Span	   *executor_span;
-	int			instrument_options = INSTRUMENT_TIMER | INSTRUMENT_ROWS;
+	int			instrument_options;
 
 	/* Evaluate if query is sampled or not */
 	check_query_sampled(NULL, queryDesc->params);
 
-	if (pg_tracing_instrument_buffers)
-		instrument_options |= INSTRUMENT_BUFFERS;
-	if (pg_tracing_instrument_wal)
-		instrument_options |= INSTRUMENT_WAL;
-
 	if (current_trace.sampled > 0 && pg_tracing_enabled(exec_nested_level))
 	{
+		instrument_options = INSTRUMENT_TIMER | INSTRUMENT_ROWS;
+		if (pg_tracing_instrument_buffers)
+			instrument_options |= INSTRUMENT_BUFFERS;
+		if (pg_tracing_instrument_wal)
+			instrument_options |= INSTRUMENT_WAL;
+
 		/*
 		 * In case of a cached plan, we haven't gone through neither parsing
 		 * nor planner hook. Parallel workers will also start tracing from
 		 * there. Create the top case in this case.
 		 */
-		initialize_trace_level_and_top_span(queryDesc->operation, NULL, NULL, queryDesc->sourceText, NULL);
+		initialize_trace_level_and_top_span(queryDesc->operation, NULL, NULL, NULL, queryDesc->sourceText, NULL);
 
 		/* Start executorStart Span */
 		executor_start_span_index = get_index_from_trace_spans();
@@ -1695,6 +1709,7 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 
 	if (!pg_tracing_track_utility || current_trace.sampled == 0 || !pg_tracing_enabled(exec_nested_level))
 	{
+		/* No sampling, just go through the standard process utility */
 		if (prev_ProcessUtility)
 			prev_ProcessUtility(pstmt, queryString, readOnlyTree,
 								context, params, queryEnv,
@@ -1718,6 +1733,7 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 		return;
 	}
 
+	/* Statement is sampled */
 	start_span_ns = get_current_ns();
 
 	/*
@@ -1727,20 +1743,13 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	 */
 	nested_query_start_ns = start_span_ns + 1000;
 
+	initialize_trace_level_and_top_span(pstmt->commandType, NULL, NULL, pstmt, queryString, &start_span_ns);
+
 	/* Build the process utility span. */
 	process_utility_span_index = get_index_from_trace_spans();
 	process_utility_span = get_span_from_index(process_utility_span_index);
 	begin_span(process_utility_span, SPAN_PROCESS_UTILITY, &current_trace,
 			   get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
-
-	/* Extract and normalise the query */
-	if (queryString != NULL && pstmt->stmt_location != -1 && pstmt->stmt_len > 0)
-	{
-		int			query_len = pstmt->stmt_len;
-		const char *normalised_query = normalise_query(queryString, pstmt->stmt_location, &query_len);
-
-		process_utility_span->operation_name_offset = add_str_to_trace_buffer(normalised_query, query_len);
-	}
 
 	/*
 	 * Set ProcessUtility span as the new top span for the nested queries that
@@ -1795,7 +1804,7 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	previous_top_span = get_span_from_index(previous_top_span_index);
 	end_span(previous_top_span, &end_span_ns);
 
-	Assert(previous_top_span->start < process_utility_span->start);
+	Assert(previous_top_span->start <= process_utility_span->start);
 	Assert(get_span_end_ns(previous_top_span) >= get_span_end_ns(process_utility_span));
 
 	end_tracing(&end_span_ns);
