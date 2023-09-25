@@ -1,4 +1,4 @@
--- Some utility functions
+-- Some helper functions
 CREATE OR REPLACE FUNCTION get_span_start_ns(time_start timestamptz, start_ns smallint) RETURNS bigint AS
 $BODY$
 BEGIN
