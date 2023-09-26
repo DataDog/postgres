@@ -118,6 +118,7 @@ static double pg_tracing_caller_sample_rate = 1;	/* Sample rate applied to
 													 * queries with
 													 * SQLCommenter */
 static bool pg_tracing_export_parameters = true;	/* Export query's parameters as span metadata */
+static bool pg_tracing_deparse_plan = true;	/* Deparse plan to generate more detailed spans */
 static int	pg_tracing_track = PG_TRACING_TRACK_ALL;	/* tracking level */
 static bool pg_tracing_track_utility = true;	/* whether to track utility
 												 * commands */
@@ -406,6 +407,17 @@ _PG_init(void)
 							 "Export query's parameters as span metadata.",
 							 NULL,
 							 &pg_tracing_export_parameters,
+							 true,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("pg_tracing.deparse_plan",
+							 "Deparse query plan to generate more detailed resource name.",
+							 NULL,
+							 &pg_tracing_deparse_plan,
 							 true,
 							 PGC_USERSET,
 							 0,
@@ -780,7 +792,10 @@ process_query_desc(QueryDesc *queryDesc, int sql_error_code)
 		planstateTraceContext.trace = &current_trace;
 		planstateTraceContext.ancestors = NULL;
 		planstateTraceContext.sql_error_code = sql_error_code;
-		planstateTraceContext.deparse_ctx = deparse_context_for_plan_tree(queryDesc->plannedstmt, planstateTraceContext.rtable_names);
+		if (pg_tracing_deparse_plan)
+			planstateTraceContext.deparse_ctx = deparse_context_for_plan_tree(queryDesc->plannedstmt, planstateTraceContext.rtable_names);
+		else
+			planstateTraceContext.deparse_ctx = NULL;
 
 		generate_span_from_planstate(queryDesc->planstate, &planstateTraceContext, parent_id);
 	}

@@ -283,16 +283,17 @@ add_scan_qual(StringInfo str, const PlanState *planstate, List *qual,
 
 	node = (Node *) make_ands_explicit(qual);
 
-	/* Set up deparsing context */
-	context = set_deparse_context_plan(deparse_ctx,
-									   planstate->plan,
-									   ancestors);
+	if (deparse_ctx != NULL) {
+		/* Set up deparsing context */
+		context = set_deparse_context_plan(deparse_ctx,
+									 planstate->plan, ancestors);
 
-	/* Deparse the expression */
-	appendStringInfoString(str, "|");
-	exprstr = deparse_expression(node, context, useprefix, false);
-	appendStringInfoString(str, qlabel);
-	appendStringInfoString(str, exprstr);
+		/* Deparse the expression */
+		exprstr = deparse_expression(node, context, useprefix, false);
+		appendStringInfoString(str, "|");
+		appendStringInfoString(str, qlabel);
+		appendStringInfoString(str, exprstr);
+	}
 }
 
 char const *
