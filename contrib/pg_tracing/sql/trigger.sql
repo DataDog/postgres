@@ -137,15 +137,33 @@ SELECT span_id AS span_r_id,
         from pg_tracing_peek_spans where parent_id=:span_a_id and name='Executor' and resource='End' \gset
 
 -- Check that spans' start and end are within expection
-SELECT :span_a_start <= :span_b_start,
-       -- Planner
-       :span_c_start >= :span_b_end, :span_c_end <= :span_d_start,
-       -- ExecutorRun
-       :span_d_start >= :span_c_end, :span_d_end >= :span_g_start,
-       -- Insert
-       :span_e_start >= :span_d_start, :span_e_end <= :span_d_end,
-       :span_e_start <= :span_f_start
-    ;
+SELECT
+-- Root span
+        :span_a_start <= :span_b_start as root_span_starts_first,
+-- Planner
+       :span_c_start >= :span_b_end as planner_after_parse,
+-- ExecutorRun
+       :span_d_start >= :span_c_end as executor_run_starts_after_planner,
+       :span_d_end <= :span_g_start as executor_run_ends_before_finish,
+-- First Insert
+       :span_e_start >= :span_d_start as insert_starts_after_executor_run,
+       :span_e_start <= :span_f_start as insert_ends_before_executor_run,
+       :span_e_end >= :span_f_end as insert_starts_before_child,
+       :span_e_end <= :span_d_end as insert_ends_after_child,
+-- ExecutorFinish
+       :span_g_start <= :span_h_start as executor_finish_starts_before_child,
+       :span_g_end >= :span_o_end as executor_finish_ends_after_child,
+-- First trigger
+       :span_h_start <= :span_i_start as first_trigger_starts_before_child,
+       :span_h_end >= :span_n_end as first_trigger_ends_after_child,
+-- Second trigger
+       :span_o_start >= :span_h_end  as second_trigger_starts_after_first,
+       :span_o_end >= :span_q_end as second_trigger_ends_after_child,
+       :span_q_end <= :span_o_start as second_trigger_ends_before_executor_end,
+       :span_o_end <= :span_r_start as second_trigger_ends_before_root_executor_end,
+-- Root ExecutorEnd
+       :span_r_start >= :span_g_end as executor_end_start_after_executor_finish,
+       :span_r_end <= :span_a_end as executor_end_ends_before_root;
 
 -- Check resource and query id
 SELECT name, resource, query_id from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
