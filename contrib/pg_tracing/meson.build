@@ -36,6 +36,7 @@ tests += {
 	  'utility',
 	  'select',
 	  'insert',
+	  'trigger',
 	  'sample',
 	  'subxact',
       'reset',
