@@ -160,35 +160,35 @@ SELECT
 SELECT name, resource, query_id from pg_tracing_consume_spans where trace_id=1 order by span_start, span_start_ns, resource;
     name    |                                                      resource                                                       |       query_id       
 ------------+---------------------------------------------------------------------------------------------------------------------+----------------------
- Insert     | INSERT INTO Employee VALUES($1,$2);                                                                                 |  1426892027161297518
- Parse      | Parse                                                                                                               |  1426892027161297518
- Post Parse | Post Parse                                                                                                          |  1426892027161297518
- Planner    | Planner                                                                                                             |  1426892027161297518
- Executor   | Start                                                                                                               |  1426892027161297518
- Executor   | Run                                                                                                                 |  1426892027161297518
- Insert     | Insert on employee                                                                                                  |  1426892027161297518
- Result     | Result                                                                                                              |  1426892027161297518
- Executor   | Finish                                                                                                              |  1426892027161297518
- Insert     | INSERT INTO Employee_Audit (EmployeeId, LastName, EmpAdditionTime) VALUES(NEW.EmployeeId,NEW.LastName,current_date) | -4246438446062883031
- Parse      | Parse                                                                                                               | -4246438446062883031
- Post Parse | Post Parse                                                                                                          | -4246438446062883031
- Planner    | Planner                                                                                                             | -4246438446062883031
- Executor   | Start                                                                                                               | -4246438446062883031
- Executor   | Run                                                                                                                 | -4246438446062883031
- Insert     | Insert on employee_audit                                                                                            | -4246438446062883031
- Result     | Result                                                                                                              | -4246438446062883031
- Executor   | Finish                                                                                                              | -4246438446062883031
- Executor   | End                                                                                                                 | -4246438446062883031
- Insert     | INSERT INTO Employee_Audit (EmployeeId, LastName, EmpAdditionTime) VALUES(NEW.EmployeeId,NEW.LastName,current_date) | -4246438446062883031
- Parse      | Parse                                                                                                               | -4246438446062883031
- Post Parse | Post Parse                                                                                                          | -4246438446062883031
- Planner    | Planner                                                                                                             | -4246438446062883031
- Executor   | Start                                                                                                               | -4246438446062883031
- Executor   | Run                                                                                                                 | -4246438446062883031
- Insert     | Insert on employee_audit                                                                                            | -4246438446062883031
- Result     | Result                                                                                                              | -4246438446062883031
- Executor   | Finish                                                                                                              | -4246438446062883031
- Executor   | End                                                                                                                 | -4246438446062883031
- Executor   | End                                                                                                                 |  1426892027161297518
+ Insert     | INSERT INTO Employee VALUES($1,$2);                                                                                 | -4259155240617476224
+ Parse      | Parse                                                                                                               | -4259155240617476224
+ Post Parse | Post Parse                                                                                                          | -4259155240617476224
+ Planner    | Planner                                                                                                             | -4259155240617476224
+ Executor   | Start                                                                                                               | -4259155240617476224
+ Executor   | Run                                                                                                                 | -4259155240617476224
+ Insert     | Insert on employee                                                                                                  | -4259155240617476224
+ Result     | Result                                                                                                              | -4259155240617476224
+ Executor   | Finish                                                                                                              | -4259155240617476224
+ Insert     | INSERT INTO Employee_Audit (EmployeeId, LastName, EmpAdditionTime) VALUES(NEW.EmployeeId,NEW.LastName,current_date) | -8138378090281802106
+ Parse      | Parse                                                                                                               | -8138378090281802106
+ Post Parse | Post Parse                                                                                                          | -8138378090281802106
+ Planner    | Planner                                                                                                             | -8138378090281802106
+ Executor   | Start                                                                                                               | -8138378090281802106
+ Executor   | Run                                                                                                                 | -8138378090281802106
+ Insert     | Insert on employee_audit                                                                                            | -8138378090281802106
+ Result     | Result                                                                                                              | -8138378090281802106
+ Executor   | Finish                                                                                                              | -8138378090281802106
+ Executor   | End                                                                                                                 | -8138378090281802106
+ Insert     | INSERT INTO Employee_Audit (EmployeeId, LastName, EmpAdditionTime) VALUES(NEW.EmployeeId,NEW.LastName,current_date) | -8138378090281802106
+ Parse      | Parse                                                                                                               | -8138378090281802106
+ Post Parse | Post Parse                                                                                                          | -8138378090281802106
+ Planner    | Planner                                                                                                             | -8138378090281802106
+ Executor   | Start                                                                                                               | -8138378090281802106
+ Executor   | Run                                                                                                                 | -8138378090281802106
+ Insert     | Insert on employee_audit                                                                                            | -8138378090281802106
+ Result     | Result                                                                                                              | -8138378090281802106
+ Executor   | Finish                                                                                                              | -8138378090281802106
+ Executor   | End                                                                                                                 | -8138378090281802106
+ Executor   | End                                                                                                                 | -4259155240617476224
 (30 rows)
 

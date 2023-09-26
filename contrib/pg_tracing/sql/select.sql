@@ -80,8 +80,15 @@ select resource, parameters from pg_tracing_consume_spans order by span_start, s
 SET pg_tracing.export_parameters=false;
 /*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000b-000000000000000b-01'*/ select 1, 2, 3;
 SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
+-- Reset export parameters setting
+SET pg_tracing.export_parameters=true;
+
+SET pg_tracing.deparse_plan=false;
+/*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000c-000000000000000c-01'*/ SELECT * from pg_tracing_test where a=1;
+SET pg_tracing.deparse_plan=true;
+/*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000d-000000000000000d-01'*/ SELECT * from pg_tracing_test where a=1;
+SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
 
 -- Cleanup
-SET pg_tracing.export_parameters=true;
 SET plan_cache_mode='auto';
 DEALLOCATE test_prepared;

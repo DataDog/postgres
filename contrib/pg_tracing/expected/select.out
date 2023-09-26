@@ -43,7 +43,7 @@ SELECT name, resource, query_id from pg_tracing_peek_spans where trace_id=1 orde
 SELECT traces from pg_tracing_info;
  traces 
 --------
-     15
+     18
 (1 row)
 
 -- Trace a statement with function call
@@ -246,7 +246,45 @@ SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by spa
        11 | End                | 
 (9 rows)
 
--- Cleanup
+-- Reset export parameters setting
 SET pg_tracing.export_parameters=true;
+SET pg_tracing.deparse_plan=false;
+/*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000c-000000000000000c-01'*/ SELECT * from pg_tracing_test where a=1;
+ a | b 
+---+---
+(0 rows)
+
+SET pg_tracing.deparse_plan=true;
+/*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000d-000000000000000d-01'*/ SELECT * from pg_tracing_test where a=1;
+ a | b 
+---+---
+(0 rows)
+
+SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
+ trace_id |                        resource                         | parameters 
+----------+---------------------------------------------------------+------------
+       12 | Parse                                                   | 
+       12 | SELECT * from pg_tracing_test where a=$1;               | $1 = 1
+       12 | Post Parse                                              | 
+       12 | Planner                                                 | 
+       12 | Start                                                   | 
+       12 | Run                                                     | 
+       12 | BitmapHeapScan on pg_tracing_test                       | 
+       12 | BitmapIndexScan on pg_tracing_index                     | 
+       12 | Finish                                                  | 
+       12 | End                                                     | 
+       13 | Parse                                                   | 
+       13 | SELECT * from pg_tracing_test where a=$1;               | $1 = 1
+       13 | Post Parse                                              | 
+       13 | Planner                                                 | 
+       13 | Start                                                   | 
+       13 | Run                                                     | 
+       13 | BitmapHeapScan on pg_tracing_test|Recheck Cond: (a = 1) | 
+       13 | BitmapIndexScan on pg_tracing_index|Index Cond: (a = 1) | 
+       13 | Finish                                                  | 
+       13 | End                                                     | 
+(20 rows)
+
+-- Cleanup
 SET plan_cache_mode='auto';
 DEALLOCATE test_prepared;

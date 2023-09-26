@@ -124,5 +124,12 @@ select resource, parameters from pg_tracing_consume_spans where trace_id = paren
 /*dddbs='postgres.db',traceparent='00-00000000000000000000000000000001-0000000000000001-01'*/ CREATE EXTENSION pg_tracing;
 select resource, parameters, sql_error_code from pg_tracing_consume_spans order by span_start, span_start_ns;
 
+-- Create test table
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000001-0000000000000001-01'*/ CREATE TABLE pg_tracing_test (a int, b char(20));
+/*dddbs='postgres.db',traceparent='00-00000000000000000000000000000002-0000000000000002-01'*/ CREATE INDEX pg_tracing_index ON pg_tracing_test (a);
+
+-- Check create table and index spans
+select trace_id, name, resource from pg_tracing_consume_spans order by span_start, span_start_ns, duration desc;
+
 -- Cleanup
 SET plan_cache_mode='auto';

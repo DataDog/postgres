@@ -1,6 +1,3 @@
--- Create test table
-CREATE TABLE IF NOT EXISTS pg_tracing_test (a int, b char(20));
-
 -- Enable full sampling
 SET pg_tracing.sample_rate = 1.0;
 

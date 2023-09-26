@@ -1,6 +1,3 @@
--- Create test table
-CREATE TABLE IF NOT EXISTS pg_tracing_test (a int, b char(20));
-
 -- Enable wal instrumentation
 set pg_tracing.instrument_wal = true;
 
