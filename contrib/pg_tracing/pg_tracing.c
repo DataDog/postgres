@@ -117,6 +117,7 @@ static double pg_tracing_sample_rate = 0;	/* Sample rate applied to queries
 static double pg_tracing_caller_sample_rate = 1;	/* Sample rate applied to
 													 * queries with
 													 * SQLCommenter */
+static bool pg_tracing_export_parameters = true;	/* Export query's parameters as span metadata */
 static int	pg_tracing_track = PG_TRACING_TRACK_ALL;	/* tracking level */
 static bool pg_tracing_track_utility = true;	/* whether to track utility
 												 * commands */
@@ -395,6 +396,17 @@ _PG_init(void)
 							 1.0,
 							 0.0,
 							 1.0,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("pg_tracing.export_parameters",
+							 "Export query's parameters as span metadata.",
+							 NULL,
+							 &pg_tracing_export_parameters,
+							 true,
 							 PGC_USERSET,
 							 0,
 							 NULL,
@@ -1261,7 +1273,8 @@ begin_top_span(Span * top_span, CmdType commandType,
 		normalised_query = normalise_query_parameters(jstate, query_text,
 													  query->stmt_location,
 													  &query_len, &paramStr);
-		top_span->parameter_offset = add_str_to_trace_buffer(paramStr, strlen(paramStr));
+		if (pg_tracing_export_parameters)
+			top_span->parameter_offset = add_str_to_trace_buffer(paramStr, strlen(paramStr));
 	}
 	else
 	{
@@ -1482,7 +1495,7 @@ pg_tracing_planner_hook(Query *query,
 	end_span_index(span_planner_index, NULL);
 
 	/* If we have a prepared statement, add bound parameters to the top span */
-	if (params != NULL)
+	if (params != NULL && pg_tracing_export_parameters)
 	{
 		char	   *paramStr = BuildParamLogString(params,
 												   NULL, pg_tracing_max_parameter_str);

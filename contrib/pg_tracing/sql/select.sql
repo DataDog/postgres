@@ -76,6 +76,12 @@ SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by spa
 -- Not executed node should not generate any spans
 select resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns;
 
+-- Check that parameters are not exported when disabled
+SET pg_tracing.export_parameters=false;
+/*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000b-000000000000000b-01'*/ select 1, 2, 3;
+SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
+
 -- Cleanup
+SET pg_tracing.export_parameters=true;
 SET plan_cache_mode='auto';
 DEALLOCATE test_prepared;

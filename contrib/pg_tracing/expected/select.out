@@ -224,6 +224,29 @@ select resource, parameters from pg_tracing_consume_spans order by span_start, s
  End        | 
 (9 rows)
 
+-- Check that parameters are not exported when disabled
+SET pg_tracing.export_parameters=false;
+/*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000b-000000000000000b-01'*/ select 1, 2, 3;
+ ?column? | ?column? | ?column? 
+----------+----------+----------
+        1 |        2 |        3
+(1 row)
+
+SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
+ trace_id |      resource      | parameters 
+----------+--------------------+------------
+       11 | Parse              | 
+       11 | select $1, $2, $3; | 
+       11 | Post Parse         | 
+       11 | Planner            | 
+       11 | Start              | 
+       11 | Run                | 
+       11 | Result             | 
+       11 | Finish             | 
+       11 | End                | 
+(9 rows)
+
 -- Cleanup
+SET pg_tracing.export_parameters=true;
 SET plan_cache_mode='auto';
 DEALLOCATE test_prepared;
