@@ -34,6 +34,8 @@ CREATE FUNCTION pg_tracing_spans(
     OUT span_start_ns smallint,
     OUT duration bigint,
     OUT sql_error_code character(5),
+    OUT userid oid,
+    OUT dbid oid,
     OUT pid int4,
     OUT nested_level smallint,
     OUT subxact_count smallint,

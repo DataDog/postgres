@@ -268,9 +268,6 @@ static void generate_member_nodes(PlanState **planstates, int nplans, planstateT
 static void generate_span_from_planstate(PlanState *planstate, planstateTraceContext * planstateTraceContext, uint64 parent_id);
 static pgTracingStats get_empty_pg_tracing_stats(void);
 
-#define PG_TRACING_INFO_COLS	7
-#define PG_TRACING_TRACES_COLS	44
-
 /*
  * Module load callback
  */
@@ -2252,6 +2249,7 @@ static void
 add_result_span(ReturnSetInfo *rsinfo, Span * span,
 				const char *qbuffer, Size qbuffer_size)
 {
+#define PG_TRACING_TRACES_COLS	46
 	Datum		values[PG_TRACING_TRACES_COLS] = {0};
 	bool		nulls[PG_TRACING_TRACES_COLS] = {0};
 	const char *span_name;
@@ -2279,6 +2277,8 @@ add_result_span(ReturnSetInfo *rsinfo, Span * span,
 	values[i++] = Int64GetDatumFast(span->duration_ns);
 	values[i++] = CStringGetTextDatum(sql_error_code);
 	values[i++] = UInt32GetDatum(span->be_pid);
+	values[i++] = ObjectIdGetDatum(span->user_id);
+	values[i++] = ObjectIdGetDatum(span->database_id);
 	values[i++] = UInt8GetDatum(span->nested_level);
 	values[i++] = UInt8GetDatum(span->subxact_count);
 	values[i++] = BoolGetDatum(span->is_top_span);
@@ -2368,6 +2368,7 @@ pg_tracing_spans(PG_FUNCTION_ARGS)
 Datum
 pg_tracing_info(PG_FUNCTION_ARGS)
 {
+#define PG_TRACING_INFO_COLS	7
 	pgTracingStats stats;
 	TupleDesc	tupdesc;
 	Datum		values[PG_TRACING_INFO_COLS] = {0};

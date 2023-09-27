@@ -63,6 +63,8 @@ initialize_span_fields(Span * span, SpanType type, const pgTracingTrace * trace,
 	span->sql_error_code = 0;
 	span->startup = 0;
 	span->be_pid = MyProcPid;
+	span->database_id = MyDatabaseId;
+	span->user_id = GetUserId();
 	span->subxact_count = MyProc->subxidStatus.count;
 	span->start_ns_time = 0;
 	span->duration_ns = 0;

@@ -112,20 +112,23 @@ typedef struct Span
 								 * uint64 */
 	uint64		parent_id;		/* Span's parent id. For the top span, it's
 								 * extracted from SQLCommenter's traceparent.
-								 * For other spans, we pass the parent's span. */
+								 * For other spans, we pass the parent's span */
 	uint64		query_id;		/* QueryId of the trace query if available */
 
-	TimestampTz start;			/* Start of the span. */
+	TimestampTz start;			/* Start of the span */
 	uint16		start_ns;		/* Leftover nanoseconds of span start */
-	int64		start_ns_time;	/* Nanoseconds at start of the span. */
+	int64		start_ns_time;	/* Nanoseconds at start of the span. Internal usage only */
 
-	int64		duration_ns;	/* Duration of the span in nanoseconds. */
+	int64		duration_ns;	/* Duration of the span in nanoseconds */
 	SpanType	type;			/* Type of the span. Used to generate the
-								 * span's name for all spans except SPAN_NODE. */
+								 * span's name for all spans except SPAN_NODE */
+	bool		is_top_span;	/* True if span is a top span for the nested level */
+	bool		ended;			/* Track if the span was already ended. Internal usage only */
 	int			be_pid;			/* Pid of the backend process */
-	bool		is_top_span;
-	bool		ended;			/* Track if the span was already ended */
-	uint8		nested_level;	/* Only used for debugging */
+	Oid 		user_id; 		/* User ID when the span was created */
+	Oid 		database_id; 	/* Database ID where the span was created */
+
+	uint8		nested_level;	/* Nested level of the span */
 	uint8		subxact_count;	/* Active count of backend's subtransaction */
 
 	/*
