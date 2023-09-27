@@ -40,8 +40,8 @@ CREATE FUNCTION pg_tracing_spans(
     OUT top_span bool,
 
 --  Plan counters
-    OUT startup_cost float8,
-    OUT total_cost float8,
+    OUT plan_startup_cost float8,
+    OUT plan_total_cost float8,
     OUT plan_rows float8,
     OUT plan_width int,
 
