@@ -10,7 +10,8 @@
  * All tokens are separated by a single space
  */
 extern const char *normalise_query_parameters(const JumbleState *jstate, const char *query,
-											  int query_loc, int *query_len_p, char **paramStr);
+											  int query_loc, int *query_len_p, char **param_str,
+											  int *param_len);
 
 extern void extract_traceparent(pgTracingTrace * pgTracingTrace, const char *query_str, bool is_parameter);
 

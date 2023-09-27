@@ -45,9 +45,9 @@
 #include "query_process.h"
 #include "span.h"
 
-#include "utils/ruleutils.h"
 #include "access/xact.h"
 #include "common/pg_prng.h"
+#include "commands/async.h"
 #include "funcapi.h"
 #include "nodes/extensible.h"
 #include "optimizer/planner.h"
@@ -56,6 +56,7 @@
 #include "tcop/utility.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/ruleutils.h"
 #include "utils/xid8.h"
 
 PG_MODULE_MAGIC;
@@ -124,6 +125,8 @@ static bool pg_tracing_track_utility = true;	/* whether to track utility
 												 * commands */
 static bool pg_tracing_drop_full_buffer = true; /* whether to drop buffered
 												 * spans when full */
+static char* pg_tracing_notify_channel = NULL; /* Name of the channel to notify when span buffer exceeds a provided threshold */
+static double pg_tracing_notify_threshold = 0.8; /* threshold for span buffer usage notification */
 
 
 int64		nested_query_start_ns = 0;
@@ -419,6 +422,30 @@ _PG_init(void)
 							 NULL,
 							 &pg_tracing_deparse_plan,
 							 true,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomStringVariable("pg_tracing.notify_channel",
+							 "Name of the channel to notify when span buffer reaches a provided threshold.",
+							 NULL,
+							 &pg_tracing_notify_channel,
+							 NULL,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomRealVariable("pg_tracing.notify_threshold",
+							 "When span buffer exceeds this threshold, a notification will be sent.",
+							 NULL,
+							 &pg_tracing_notify_threshold,
+							 0.8,
+							 0.0,
+							 1.0,
 							 PGC_USERSET,
 							 0,
 							 NULL,
@@ -1031,6 +1058,8 @@ static void
 end_tracing(const int64 *end_span_ns)
 {
 	Size		file_position = 0;
+	int start_spans_number;
+	int end_spans_number;
 
 	/* We're still a nested query, tracing is not finished */
 	if (exec_nested_level > 0)
@@ -1046,10 +1075,19 @@ end_tracing(const int64 *end_span_ns)
 		volatile	pgTracingSharedState *s = (volatile pgTracingSharedState *) pg_tracing;
 
 		SpinLockAcquire(&s->mutex);
+		start_spans_number = shared_spans->end;
 		/* We're at the end, add all spans to the shared memory */
 		for (int i = 0; i < current_trace_spans->end; i++)
 			add_span_to_shared_buffer_locked(&current_trace_spans->spans[i]);
+		end_spans_number = shared_spans->end;
 		SpinLockRelease(&s->mutex);
+	}
+
+	if (pg_tracing_notify_channel != NULL && !IsParallelWorker()) {
+		int span_threshold = pg_tracing_max_span * pg_tracing_notify_threshold;
+		if (start_spans_number < span_threshold && end_spans_number >= span_threshold)
+			/* We've crossed the threshold, send a notification */
+			Async_Notify(pg_tracing_notify_channel, NULL);
 	}
 
 	/* We can reset the memory context here */
@@ -1226,6 +1264,7 @@ static int
 add_str_to_trace_buffer(const char *str, int str_len)
 {
 	int			position = current_trace_text->cursor;
+	Assert(str_len > 0);
 
 	appendBinaryStringInfo(current_trace_text, str, str_len);
 	appendStringInfoChar(current_trace_text, '\0');
@@ -1282,14 +1321,16 @@ begin_top_span(Span * top_span, CmdType commandType,
 	if (jstate && jstate->clocations_count > 0 && query != NULL)
 	{
 		/* jstate is available, normalise query and extract parameters' values */
-		char	   *paramStr;
+		char	   *param_str;
+		int 		param_len;
 
 		query_len = query->stmt_len;
 		normalised_query = normalise_query_parameters(jstate, query_text,
 													  query->stmt_location,
-													  &query_len, &paramStr);
+													  &query_len, &param_str, &param_len);
+		Assert(param_len > 0);
 		if (pg_tracing_export_parameters)
-			top_span->parameter_offset = add_str_to_trace_buffer(paramStr, strlen(paramStr));
+			top_span->parameter_offset = add_str_to_trace_buffer(param_str, param_len);
 	}
 	else
 	{

@@ -121,15 +121,15 @@ comp_location(const void *a, const void *b)
 
 
 /*
- * Normalise query and fill paramStr.
+ * Normalise query and fill param_str.
  * Normalised query will separate tokens with a single space and
  * parameters are replaced by $1, $2...
- * Parameters are put in the paramStr wich will contain all parameters values
+ * Parameters are put in the param_str wich will contain all parameters values
  * using the format: "$1 = 0, $2 = 'v'"
  */
 const char *
 normalise_query_parameters(const JumbleState *jstate, const char *query,
-						   int query_loc, int *query_len_p, char **paramStr)
+						   int query_loc, int *query_len_p, char **param_str, int *param_len)
 {
 	char	   *norm_query;
 	int			query_len = *query_len_p;
@@ -144,6 +144,18 @@ normalise_query_parameters(const JumbleState *jstate, const char *query,
 	StringInfoData buf;
 
 	initStringInfo(&buf);
+
+	if (query_loc == -1) {
+		/* If query location is unknown, distrust query_len as well */
+		query_loc = 0;
+		query_len = strlen(query);
+	} else {
+		/* Length of 0 (or -1) means "rest of string" */
+		if (query_len <= 0)
+			query_len = strlen(query);
+		else
+			Assert(query_len <= strlen(query));
+	}
 
 	norm_query_buflen = query_len + jstate->clocations_count * 10;
 	Assert(norm_query_buflen > 0);
@@ -241,7 +253,8 @@ normalise_query_parameters(const JumbleState *jstate, const char *query,
 
 	*query_len_p = n_quer_loc;
 	norm_query[n_quer_loc] = '\0';
-	*paramStr = buf.data;
+	*param_str = buf.data;
+	*param_len = buf.len;
 	return norm_query;
 }
 
