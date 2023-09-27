@@ -283,10 +283,11 @@ add_scan_qual(StringInfo str, const PlanState *planstate, List *qual,
 
 	node = (Node *) make_ands_explicit(qual);
 
-	if (deparse_ctx != NULL) {
+	if (deparse_ctx != NULL)
+	{
 		/* Set up deparsing context */
 		context = set_deparse_context_plan(deparse_ctx,
-									 planstate->plan, ancestors);
+										   planstate->plan, ancestors);
 
 		/* Deparse the expression */
 		exprstr = deparse_expression(node, context, useprefix, false);

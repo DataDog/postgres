@@ -145,11 +145,14 @@ normalise_query_parameters(const JumbleState *jstate, const char *query,
 
 	initStringInfo(&buf);
 
-	if (query_loc == -1) {
+	if (query_loc == -1)
+	{
 		/* If query location is unknown, distrust query_len as well */
 		query_loc = 0;
 		query_len = strlen(query);
-	} else {
+	}
+	else
+	{
 		/* Length of 0 (or -1) means "rest of string" */
 		if (query_len <= 0)
 			query_len = strlen(query);

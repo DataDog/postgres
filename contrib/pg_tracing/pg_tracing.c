@@ -118,15 +118,23 @@ static double pg_tracing_sample_rate = 0;	/* Sample rate applied to queries
 static double pg_tracing_caller_sample_rate = 1;	/* Sample rate applied to
 													 * queries with
 													 * SQLCommenter */
-static bool pg_tracing_export_parameters = true;	/* Export query's parameters as span metadata */
-static bool pg_tracing_deparse_plan = true;	/* Deparse plan to generate more detailed spans */
+static bool pg_tracing_export_parameters = true;	/* Export query's
+													 * parameters as span
+													 * metadata */
+static bool pg_tracing_deparse_plan = true; /* Deparse plan to generate more
+											 * detailed spans */
 static int	pg_tracing_track = PG_TRACING_TRACK_ALL;	/* tracking level */
 static bool pg_tracing_track_utility = true;	/* whether to track utility
 												 * commands */
 static bool pg_tracing_drop_full_buffer = true; /* whether to drop buffered
 												 * spans when full */
-static char* pg_tracing_notify_channel = NULL; /* Name of the channel to notify when span buffer exceeds a provided threshold */
-static double pg_tracing_notify_threshold = 0.8; /* threshold for span buffer usage notification */
+static char *pg_tracing_notify_channel = NULL;	/* Name of the channel to
+												 * notify when span buffer
+												 * exceeds a provided
+												 * threshold */
+static double pg_tracing_notify_threshold = 0.8;	/* threshold for span
+													 * buffer usage
+													 * notification */
 
 
 int64		nested_query_start_ns = 0;
@@ -213,8 +221,8 @@ typedef struct pgTracingPerLevelBuffer
 	int			top_span_index; /* Index of the top span in the
 								 * current_trace_spans buffer */
 	uint64		executor_run_id;	/* Span id of executor run spans by nested
-								 * level Executor run is used as parent for
-								 * spans generated from planstate */
+									 * level Executor run is used as parent
+									 * for spans generated from planstate */
 	uint64_t	query_id;		/* Query id by nested level when available */
 }			pgTracingPerLevelBuffer;
 
@@ -429,15 +437,15 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomStringVariable("pg_tracing.notify_channel",
-							 "Name of the channel to notify when span buffer reaches a provided threshold.",
-							 NULL,
-							 &pg_tracing_notify_channel,
-							 NULL,
-							 PGC_USERSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
+							   "Name of the channel to notify when span buffer reaches a provided threshold.",
+							   NULL,
+							   &pg_tracing_notify_channel,
+							   NULL,
+							   PGC_USERSET,
+							   0,
+							   NULL,
+							   NULL,
+							   NULL);
 
 	DefineCustomRealVariable("pg_tracing.notify_threshold",
 							 "When span buffer exceeds this threshold, a notification will be sent.",
@@ -995,7 +1003,8 @@ adjust_file_offset(Span * span, Size file_position)
 static int64
 get_top_span_start(bool in_utility_stmt, int64 *start_time_ns)
 {
-	if (in_utility_stmt) {
+	if (in_utility_stmt)
+	{
 		Assert(start_time_ns != NULL);
 		return *start_time_ns;
 	}
@@ -1058,8 +1067,8 @@ static void
 end_tracing(const int64 *end_span_ns)
 {
 	Size		file_position = 0;
-	int start_spans_number;
-	int end_spans_number;
+	int			start_spans_number;
+	int			end_spans_number;
 
 	/* We're still a nested query, tracing is not finished */
 	if (exec_nested_level > 0)
@@ -1083,8 +1092,10 @@ end_tracing(const int64 *end_span_ns)
 		SpinLockRelease(&s->mutex);
 	}
 
-	if (pg_tracing_notify_channel != NULL && !IsParallelWorker()) {
-		int span_threshold = pg_tracing_max_span * pg_tracing_notify_threshold;
+	if (pg_tracing_notify_channel != NULL && !IsParallelWorker())
+	{
+		int			span_threshold = pg_tracing_max_span * pg_tracing_notify_threshold;
+
 		if (start_spans_number < span_threshold && end_spans_number >= span_threshold)
 			/* We've crossed the threshold, send a notification */
 			Async_Notify(pg_tracing_notify_channel, NULL);
@@ -1134,7 +1145,8 @@ handle_pg_error(int span_index, QueryDesc *queryDesc)
 	end_span_ns = get_current_ns();
 
 	/* End all ongoing spans */
-	for (int i = 0; i < current_trace_spans->end; i++) {
+	for (int i = 0; i < current_trace_spans->end; i++)
+	{
 		span = get_span_from_index(i);
 		if (span->ended == false)
 			end_span(span, &end_span_ns);
@@ -1264,6 +1276,7 @@ static int
 add_str_to_trace_buffer(const char *str, int str_len)
 {
 	int			position = current_trace_text->cursor;
+
 	Assert(str_len > 0);
 
 	appendBinaryStringInfo(current_trace_text, str, str_len);
@@ -1322,7 +1335,7 @@ begin_top_span(Span * top_span, CmdType commandType,
 	{
 		/* jstate is available, normalise query and extract parameters' values */
 		char	   *param_str;
-		int 		param_len;
+		int			param_len;
 
 		query_len = query->stmt_len;
 		normalised_query = normalise_query_parameters(jstate, query_text,
@@ -1344,10 +1357,14 @@ begin_top_span(Span * top_span, CmdType commandType,
 		{
 			query_len = query->stmt_len;
 			stmt_location = query->stmt_location;
-		} else if (pstmt != NULL && pstmt->stmt_location != -1 && pstmt->stmt_len > 0) {
+		}
+		else if (pstmt != NULL && pstmt->stmt_location != -1 && pstmt->stmt_len > 0)
+		{
 			query_len = pstmt->stmt_len;
 			stmt_location = pstmt->stmt_location;
-		} else {
+		}
+		else
+		{
 			query_len = strlen(query_text);
 			stmt_location = 0;
 		}
@@ -1366,7 +1383,7 @@ initialize_trace_level_and_top_span(CmdType commandType, Query *query, JumbleSta
 	bool		new_nested_level = initialize_trace_level();
 	int64		top_span_start_ns;
 	Span	   *current_top = get_top_span_for_nested_level(exec_nested_level);
-	bool in_utility_stmt = pstmt != NULL;
+	bool		in_utility_stmt = pstmt != NULL;
 
 	top_span_start_ns = get_top_span_start(in_utility_stmt, start_time_ns);
 	/* current_trace_spans buffer should have been allocated */
@@ -1461,10 +1478,10 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 		Span	   *parse_span = NULL;
 
 		/*
-		* We don't have a precise time for parse end, estimate it
-		*
-		* TODO: Can we get a more precise start of parse
-		*/
+		 * We don't have a precise time for parse end, estimate it
+		 *
+		 * TODO: Can we get a more precise start of parse
+		 */
 		int64		end_parse_ns = start_post_parse_ns - 1000;
 		int			parse_index = get_index_from_trace_spans();
 
@@ -1700,7 +1717,7 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 	if (current_trace.sampled > 0 && pg_tracing_enabled(exec_nested_level))
 	{
 		Span	   *executor_finish_span = NULL;
-		int64 start_span_ns = get_current_ns();
+		int64		start_span_ns = get_current_ns();
 
 		span_index = get_index_from_trace_spans();
 		executor_finish_span = get_span_from_index(span_index);
@@ -1709,7 +1726,7 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 		/*
 		 * ExecutorFinish may create nested queries when executing triggers.
 		 * We set ExecutorFinish span as the top queries for this.
-		*/
+		 */
 		previous_top_span_index = per_level_buffers[exec_nested_level].top_span_index;
 		set_top_span(exec_nested_level, span_index);
 		nested_query_start_ns = start_span_ns + 1000;
@@ -1732,7 +1749,8 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 	PG_END_TRY();
 	exec_nested_level--;
 
-	if (span_index != -1) {
+	if (span_index != -1)
+	{
 		/* Restore previous top queries */
 		set_top_span(exec_nested_level, previous_top_span_index);
 		end_span_index(span_index, NULL);
@@ -1772,11 +1790,12 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 	if (executor_end_index > -1)
 	{
 		int64		end_span_ns = get_current_ns();
+
 		/*
-		 * We may go through multiple statement nested in a
-		 * single ExecutorFinish (multiple triggers) so we need to
-		 * update the nested_start.
-		*/
+		 * We may go through multiple statement nested in a single
+		 * ExecutorFinish (multiple triggers) so we need to update the
+		 * nested_start.
+		 */
 		nested_query_start_ns = end_span_ns + 1000;
 
 		/* End top span, executor_end span and tracing */
