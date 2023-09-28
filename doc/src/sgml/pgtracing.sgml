@@ -102,8 +102,7 @@
        <structfield>name</structfield> <type>text</type>
       </para>
       <para>
-       Name of the span. For non-node spans, this can be: Parse, Post Parse, Planner, Executor.
-       For span generated from execution plan, it will use the node type: Select, Insert, SeqScan, Gather...
+       Name of the span
       </para></entry>
      </row>
 
@@ -112,9 +111,7 @@
        <structfield>resource</structfield> <type>text</type>
       </para>
       <para>
-       Name of the span's operation. For Executor, it can be Start, Run, Finish and End.
-       Top spans will have the normalised query text.
-       Node spans will have the detailed node like 'SeqScan on pgbench_branches a'
+       Name of the span's operation
       </para></entry>
      </row>
 
@@ -132,17 +129,7 @@
        <structfield>span_start_ns</structfield> <type>smallint</type>
       </para>
       <para>
-       Nanoseconds part of start time. Timestamp only provides a microsecond precision
-       and spans need nanosecond precision
-      </para></entry>
-     </row>
-
-     <row>
-      <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>duration</structfield> <type>bigint</type>
-      </para>
-      <para>
-       Duration of the span in nanoseconds
+       Nanoseconds part of start time
       </para></entry>
      </row>
 
@@ -471,23 +458,23 @@
 
  </sect2>
 
- <sect2 id="pgtracing-pg-stat-statements-info">
-  <title>The <structname>pg_stat_statements_info</structname> View</title>
+ <sect2 id="pgtracing-pg-tracing-info">
+  <title>The <structname>pg_tracing_info</structname> View</title>
 
   <indexterm>
-   <primary>pg_stat_statements_info</primary>
+   <primary>pg_tracing_info</primary>
   </indexterm>
 
   <para>
    The statistics of the <filename>pg_tracing</filename> module
    itself are tracked and made available via a view named
-   <structname>pg_stat_statements_info</structname>.  This view contains
+   <structname>pg_tracing_info</structname>.  This view contains
    only a single row.  The columns of the view are shown in
    <xref linkend="pgtracinginfo-columns"/>.
   </para>
 
   <table id="pgtracinginfo-columns">
-   <title><structname>pg_stat_statements_info</structname> Columns</title>
+   <title><structname>pg_tracing_info</structname> Columns</title>
    <tgroup cols="1">
     <thead>
      <row>
@@ -503,22 +490,58 @@
     <tbody>
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>dealloc</structfield> <type>bigint</type>
+       <structfield>traces</structfield> <type>bigint</type>
       </para>
       <para>
-       Total number of times <structname>pg_tracing</structname>
-       entries about the least-executed statements were deallocated
-       because more distinct statements than
-       <varname>pg_tracing.max</varname> were observed
+       Total number traces captured by the module
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>spans</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number spans captured by the module
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>dropped_spans</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of spans dropped because more than
+       <varname>pg_tracing.max_span</varname> were stored
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>failed_truncates</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of times the module couldn't truncate the
+       query file due to a conflicting lock
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>last_consume</structfield> <type>timestamp with time zone</type>
+      </para>
+      <para>
+       Time at which spans were consumed
+      </para></entry>
+     </row>
+
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
        Time at which all statistics in the
-       <structname>pg_tracing</structname> view were last reset.
+       <structname>pg_tracing_info</structname> view were last reset.
       </para></entry>
      </row>
 
@@ -533,25 +556,17 @@
   <variablelist>
    <varlistentry>
     <term>
-     <function>pg_stat_statements_reset(userid Oid, dbid Oid, queryid bigint) returns void</function>
+     <function>pg_tracing_reset() returns void</function>
      <indexterm>
-      <primary>pg_stat_statements_reset</primary>
+      <primary>pg_tracing_reset</primary>
      </indexterm>
     </term>
 
     <listitem>
      <para>
-      <function>pg_stat_statements_reset</function> discards statistics
-      gathered so far by <filename>pg_tracing</filename> corresponding
-      to the specified <structfield>userid</structfield>, <structfield>dbid</structfield>
-      and <structfield>queryid</structfield>.  If any of the parameters are not
-      specified, the default value <literal>0</literal>(invalid) is used for
-      each of them and the statistics that match with other parameters will be
-      reset.  If no parameter is specified or all the specified parameters are
-      <literal>0</literal>(invalid), it will discard all statistics.
-      If all statistics in the <filename>pg_tracing</filename>
-      view are discarded, it will also reset the statistics in the
-      <structname>pg_stat_statements_info</structname> view.
+      <function>pg_tracing_reset</function> discards all statistics
+      gathered so far by <filename>pg_tracing</filename>.
+      Span buffer is not emptied by this function.
       By default, this function can only be executed by superusers.
       Access may be granted to others using <command>GRANT</command>.
      </para>
@@ -560,7 +575,7 @@
 
    <varlistentry>
     <term>
-     <function>pg_tracing(showtext boolean) returns setof record</function>
+     <function>pg_tracing_spans(consume boolean) returns setof record</function>
      <indexterm>
       <primary>pg_tracing</primary>
       <secondary>function</secondary>
@@ -569,21 +584,14 @@
 
     <listitem>
      <para>
-      The <structname>pg_tracing</structname> view is defined in
-      terms of a function also named <function>pg_tracing</function>.
-      It is possible for clients to call
-      the <function>pg_tracing</function> function directly, and by
-      specifying <literal>showtext := false</literal> have query text be
-      omitted (that is, the <literal>OUT</literal> argument that corresponds
-      to the view's <structfield>query</structfield> column will return nulls).  This
-      feature is intended to support external tools that might wish to avoid
-      the overhead of repeatedly retrieving query texts of indeterminate
-      length.  Such tools can instead cache the first query text observed
-      for each entry themselves, since that is
-      all <filename>pg_tracing</filename> itself does, and then retrieve
-      query texts only as needed.  Since the server stores query texts in a
-      file, this approach may reduce physical I/O for repeated examination
-      of the <structname>pg_tracing</structname> data.
+      The <structname>pg_tracing_consume_spans</structname> and
+      <structname>pg_tracing_peek_spans</structname> views are defined in
+      terms of a function named <function>pg_tracing_spans</function>.
+      It is possible for clients to call the
+      <function>pg_tracing_spans</function> function directly. By
+      specifying <literal>consume := false</literal>, spans won't be removed
+      from the span buffer. With <literal>consume := true</literal>,
+      read spans will be deleted.
      </para>
     </listitem>
    </varlistentry>
@@ -596,23 +604,127 @@
   <variablelist>
    <varlistentry>
     <term>
-     <varname>pg_tracing.max</varname> (<type>integer</type>)
+     <varname>pg_tracing.max_span</varname> (<type>integer</type>)
      <indexterm>
-      <primary><varname>pg_tracing.max</varname> configuration parameter</primary>
+      <primary><varname>pg_tracing.max_span</varname> configuration parameter</primary>
      </indexterm>
     </term>
 
     <listitem>
      <para>
-      <varname>pg_tracing.max</varname> is the maximum number of
-      statements tracked by the module (i.e., the maximum number of rows
-      in the <structname>pg_tracing</structname> view).  If more distinct
-      statements than that are observed, information about the least-executed
-      statements is discarded.  The number of times such information was
-      discarded can be seen in the
-      <structname>pg_stat_statements_info</structname> view.
-      The default value is 5000.
+      <varname>pg_tracing.max_span</varname> is the maximum number of
+      spans stored by the module (i.e., the maximum number of rows
+      returned by the <structname>pg_tracing_spans</structname> function).
+      If more spans are observed, the span buffer will be emptied if
+      <varname>pg_tracing.drop_on_full_buffer</varname> is true. If
+      <varname>pg_tracing.drop_on_full_buffer</varname> if false, the spans
+      will be dropped and tracing will be aborted.
+      The default value is 5000. This parameter can only be set at server start.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.drop_on_full_buffer</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.drop_on_full_buffer</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.drop_on_full_buffer</varname> controls whether
+      span buffer should be emptied when <varname>pg_tracing.max_span</varname>
+      spans is reached. If <literal>off</literal>, new spans are dropped.
+      The default value is <literal>on</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.max_parameter_size</varname> (<type>integer</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.max_parameter_size</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.max_parameter_size</varname> controls the maximum
+      size of the parameter string.
+      The default value is <literal>1024</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.instrument_buffers</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.instrument_buffers</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.instrument_buffers</varname> controls whether
+      buffer instrumentation should be enable and exported in span metadata.
+      The default value is <literal>on</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.instrument_wal</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.instrument_wal</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.instrument_wal</varname> controls whether
+      WAL instrumentation should be enable and exported in span metadata.
+      The default value is <literal>on</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.max_traced_parallel_workers</varname> (<type>integer</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.max_traced_parallel_workers</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.max_traced_parallel_workers</varname> controls the maximum
+      number of simultaneous parallel workers that can be traced.
+      The default value is <literal>100</literal>.
+      Only superusers can change this setting.
       This parameter can only be set at server start.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.initial_allocated_spans</varname> (<type>integer</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.initial_allocated_spans</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.initial_allocated_spans</varname> controls the number
+      of allocated spans at the start of a trace.
+      The default value is <literal>25</literal>.
      </para>
     </listitem>
    </varlistentry>
@@ -628,13 +740,12 @@
     <listitem>
      <para>
       <varname>pg_tracing.track</varname> controls which statements
-      are counted by the module.
-      Specify <literal>top</literal> to track top-level statements (those issued
-      directly by clients), <literal>all</literal> to also track nested statements
-      (such as statements invoked within functions), or <literal>none</literal> to
-      disable statement statistics collection.
-      The default value is <literal>top</literal>.
-      Only superusers can change this setting.
+      should spans should be generated.
+      Specify <literal>top</literal> to only generate span for top-level
+      statements (those issued directly by clients), <literal>all</literal>
+      to also generate spans for nested statements (such as statements invoked
+      within functions), or <literal>none</literal> to disable span generation.
+      The default value is <literal>all</literal>.
      </para>
     </listitem>
    </varlistentry>
@@ -649,15 +760,18 @@
 
     <listitem>
      <para>
-      <varname>pg_tracing.track_utility</varname> controls whether
-      utility commands are tracked by the module.  Utility commands are
+      <varname>pg_tracing.track_utility</varname> controls whether spans
+      should be generated for utility statements. Utility commands are
       all those other than <command>SELECT</command>, <command>INSERT</command>,
       <command>UPDATE</command>, <command>DELETE</command>, and <command>MERGE</command>.
       The default value is <literal>on</literal>.
-      Only superusers can change this setting.
      </para>
     </listitem>
    </varlistentry>
+
+
+
+
 
    <varlistentry>
     <term>
