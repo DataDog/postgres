@@ -64,7 +64,7 @@ SELECT :span_a_start < :span_b_start AS span_a_start_first,
 select count(*) from pg_tracing_consume_spans;
  count 
 -------
-    49
+    53
 (1 row)
 
 --
