@@ -10,8 +10,7 @@ CREATE FUNCTION pg_tracing_info(
     OUT dropped_spans bigint,
     OUT failed_truncates bigint,
     OUT last_consume timestamp with time zone,
-    OUT stats_reset timestamp with time zone,
-    OUT sampling_rate double precision
+    OUT stats_reset timestamp with time zone
 )
 RETURNS record
 AS 'MODULE_PATHNAME'
@@ -97,5 +96,8 @@ CREATE VIEW pg_tracing_consume_spans AS
   SELECT * FROM pg_tracing_spans(true);
 
 GRANT SELECT ON pg_tracing_info TO PUBLIC;
-GRANT SELECT ON pg_tracing_peek_spans TO PUBLIC;
-GRANT SELECT ON pg_tracing_consume_spans TO PUBLIC;
+GRANT SELECT ON pg_tracing_peek_spans TO pg_read_all_stats;
+GRANT SELECT ON pg_tracing_consume_spans TO pg_read_all_stats;
+
+-- Don't want this to be available to non-superusers.
+REVOKE EXECUTE ON FUNCTION pg_tracing_reset() FROM PUBLIC;

@@ -281,7 +281,7 @@ _PG_init(void)
 							"Maximum number of spans stored in shared memory.",
 							NULL,
 							&pg_tracing_max_span,
-							1000,
+							5000,
 							0,
 							500000,
 							PGC_SUSET,
@@ -2368,7 +2368,7 @@ pg_tracing_spans(PG_FUNCTION_ARGS)
 Datum
 pg_tracing_info(PG_FUNCTION_ARGS)
 {
-#define PG_TRACING_INFO_COLS	7
+#define PG_TRACING_INFO_COLS	6
 	pgTracingStats stats;
 	TupleDesc	tupdesc;
 	Datum		values[PG_TRACING_INFO_COLS] = {0};
@@ -2399,7 +2399,6 @@ pg_tracing_info(PG_FUNCTION_ARGS)
 	values[i++] = Int64GetDatum(stats.failed_truncates);
 	values[i++] = TimestampTzGetDatum(stats.last_consume);
 	values[i++] = TimestampTzGetDatum(stats.stats_reset);
-	values[i++] = Float8GetDatum(pg_tracing_sample_rate);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }
