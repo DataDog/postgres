@@ -769,49 +769,114 @@
     </listitem>
    </varlistentry>
 
-
-
-
-
    <varlistentry>
     <term>
-     <varname>pg_tracing.track_planning</varname> (<type>boolean</type>)
+     <varname>pg_tracing.sample_rate</varname> (<type>real</type>)
      <indexterm>
-      <primary><varname>pg_tracing.track_planning</varname> configuration parameter</primary>
+      <primary><varname>pg_tracing.sample_rate</varname> configuration parameter</primary>
      </indexterm>
     </term>
 
     <listitem>
      <para>
-      <varname>pg_tracing.track_planning</varname> controls whether
-      planning operations and duration are tracked by the module.
-      Enabling this parameter may incur a noticeable performance penalty,
-      especially when statements with identical query structure are executed
-      by many concurrent connections which compete to update a small number of
-      <structname>pg_tracing</structname> entries.
-      The default value is <literal>off</literal>.
-      Only superusers can change this setting.
+      <varname>pg_tracing.sample_rate</varname> controls the fraction of
+      statements that generate spans. Statements with tracecontext propagated
+      with SQLCommenter and sampled flag enabled are not impacted by this parameter.
+      In case of nested statements, either all will be explained or none.
+      The default value is <literal>0</literal>.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
     <term>
-     <varname>pg_tracing.save</varname> (<type>boolean</type>)
+     <varname>pg_tracing.caller_sample_rate</varname> (<type>real</type>)
      <indexterm>
-      <primary><varname>pg_tracing.save</varname> configuration parameter</primary>
+      <primary><varname>pg_tracing.caller_sample_rate</varname> configuration parameter</primary>
      </indexterm>
     </term>
 
     <listitem>
      <para>
-      <varname>pg_tracing.save</varname> specifies whether to
-      save statement statistics across server shutdowns.
-      If it is <literal>off</literal> then statistics are not saved at
-      shutdown nor reloaded at server start.
+      <varname>pg_tracing.caller_sample_rate</varname> controls the fraction of
+      statements with with tracecontext propagated with SQLCommenter and an
+      enabled sampled flag that will generate spans.
+      The default value is <literal>1</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.export_parameters</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.export_parameters</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.export_parameters</varname> controls whether
+      query's parameters should be exported in spans metadata.
       The default value is <literal>on</literal>.
-      This parameter can only be set in the <filename>postgresql.conf</filename>
-      file or on the server command line.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.deparse_plan</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.deparse_plan</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.deparse_plan</varname> controls whether
+      the query plan should be deparsed. Deparsing plan allows to
+      add more details in span's name. A
+      <literal>BitmapHeapScan on pg_tracing_test</literal> node will
+      become <literal>BitmapHeapScan on pg_tracing_test|Recheck Cond: (a = 1)</literal>
+      with deparsing information.
+      The default value is <literal>on</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.notify_channel</varname> (<type>text</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.notify_channel</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.notify_channel</varname> defines a channel
+      that will receive a notification when the span buffer exceeds
+      the <varname>pg_tracing.notify_threshold</varname> threshold.
+      No channel is defined by default.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>pg_tracing.notify_threshold</varname> (<type>text</type>)
+     <indexterm>
+      <primary><varname>pg_tracing.notify_threshold</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <varname>pg_tracing.notify_threshold</varname> defines the
+      threhold for sending notification to the <varname>pg_tracing.notify_channel</varname>
+      channel.
+      The default value is <literal>0.8</literal>: a notification will be sent when span buffer
+      crosses the 80% of usage.
      </para>
     </listitem>
    </varlistentry>
@@ -819,9 +884,9 @@
 
   <para>
    The module requires additional shared memory proportional to
-   <varname>pg_tracing.max</varname>.  Note that this
+   <varname>pg_tracing.max_span</varname>.  Note that this
    memory is consumed whenever the module is loaded, even if
-   <varname>pg_tracing.track</varname> is set to <literal>none</literal>.
+   no spans are generated.
   </para>
 
   <para>
@@ -833,7 +898,7 @@
 shared_preload_libraries = 'pg_tracing'
 
 compute_query_id = on
-pg_tracing.max = 10000
+pg_tracing.span_max = 10000
 pg_tracing.track = all
 </programlisting>
   </para>
@@ -843,103 +908,28 @@ pg_tracing.track = all
   <title>Sample Output</title>
 
 <screen>
-bench=# SELECT pg_stat_statements_reset();
+=# SET pg_tracing.sample_rate = 1.0;
 
-$ pgbench -i bench
-$ pgbench -c10 -t300 bench
+=# SELECT 1;
 
-bench=# \x
-bench=# SELECT query, calls, total_exec_time, rows, 100.0 * shared_blks_hit /
-               nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent
-          FROM pg_tracing ORDER BY total_exec_time DESC LIMIT 5;
--[ RECORD 1 ]---+--------------------------------------------------&zwsp;------------------
-query           | UPDATE pgbench_branches SET bbalance = bbalance + $1 WHERE bid = $2
-calls           | 3000
-total_exec_time | 25565.855387
-rows            | 3000
-hit_percent     | 100.0000000000000000
--[ RECORD 2 ]---+--------------------------------------------------&zwsp;------------------
-query           | UPDATE pgbench_tellers SET tbalance = tbalance + $1 WHERE tid = $2
-calls           | 3000
-total_exec_time | 20756.669379
-rows            | 3000
-hit_percent     | 100.0000000000000000
--[ RECORD 3 ]---+--------------------------------------------------&zwsp;------------------
-query           | copy pgbench_accounts from stdin
-calls           | 1
-total_exec_time | 291.865911
-rows            | 100000
-hit_percent     | 100.0000000000000000
--[ RECORD 4 ]---+--------------------------------------------------&zwsp;------------------
-query           | UPDATE pgbench_accounts SET abalance = abalance + $1 WHERE aid = $2
-calls           | 3000
-total_exec_time | 271.232977
-rows            | 3000
-hit_percent     | 98.8454011741682975
--[ RECORD 5 ]---+--------------------------------------------------&zwsp;------------------
-query           | alter table pgbench_accounts add primary key (aid)
-calls           | 1
-total_exec_time | 160.588563
-rows            | 0
-hit_percent     | 100.0000000000000000
+=# select trace_id, parent_id, span_id, span_start, duration, name, resource from pg_tracing_consume_spans;
+      trace_id       |      parent_id      |       span_id        |          span_start           | duration |    name    |  resource
+---------------------+---------------------+----------------------+-------------------------------+----------+------------+------------
+ 8436987430158233373 | 8436987430158233373 |  8436987430158233373 | 2023-09-28 11:56:52.020415+00 |  1673166 | Select     | SELECT $1;
+ 8436987430158233373 | 8436987430158233373 |   468843491005962723 | 2023-09-28 11:56:52.020415+00 |  1221791 | Parse      | Parse
+ 8436987430158233373 | 8436987430158233373 |  8110105684612473702 | 2023-09-28 11:56:52.021637+00 |    91250 | Post Parse | Post Parse
+ 8436987430158233373 | 8436987430158233373 | -4384264347316115483 | 2023-09-28 11:56:52.021742+00 |   131917 | Planner    | Planner
+ 8436987430158233373 | 8436987430158233373 | -8527175880744630863 | 2023-09-28 11:56:52.021904+00 |    44292 | Executor   | Start
+ 8436987430158233373 | 8436987430158233373 |  -120954180330579519 | 2023-09-28 11:56:52.021956+00 |    69583 | Executor   | Run
+ 8436987430158233373 | 8436987430158233373 | -8207924027740007398 | 2023-09-28 11:56:52.02203+00  |     2125 | Executor   | Finish
+ 8436987430158233373 | 8436987430158233373 | -4829903220387559117 | 2023-09-28 11:56:52.022033+00 |    54625 | Executor   | End
+ 8436987430158233373 | -120954180330579519 |  1336916348516638044 | 2023-09-28 11:56:52.021989+00 |    13042 | Result     | Result
+(9 rows)
 
-
-bench=# SELECT pg_stat_statements_reset(0,0,s.queryid) FROM pg_tracing AS s
-            WHERE s.query = 'UPDATE pgbench_branches SET bbalance = bbalance + $1 WHERE bid = $2';
-
-bench=# SELECT query, calls, total_exec_time, rows, 100.0 * shared_blks_hit /
-               nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent
-          FROM pg_tracing ORDER BY total_exec_time DESC LIMIT 5;
--[ RECORD 1 ]---+--------------------------------------------------&zwsp;------------------
-query           | UPDATE pgbench_tellers SET tbalance = tbalance + $1 WHERE tid = $2
-calls           | 3000
-total_exec_time | 20756.669379
-rows            | 3000
-hit_percent     | 100.0000000000000000
--[ RECORD 2 ]---+--------------------------------------------------&zwsp;------------------
-query           | copy pgbench_accounts from stdin
-calls           | 1
-total_exec_time | 291.865911
-rows            | 100000
-hit_percent     | 100.0000000000000000
--[ RECORD 3 ]---+--------------------------------------------------&zwsp;------------------
-query           | UPDATE pgbench_accounts SET abalance = abalance + $1 WHERE aid = $2
-calls           | 3000
-total_exec_time | 271.232977
-rows            | 3000
-hit_percent     | 98.8454011741682975
--[ RECORD 4 ]---+--------------------------------------------------&zwsp;------------------
-query           | alter table pgbench_accounts add primary key (aid)
-calls           | 1
-total_exec_time | 160.588563
-rows            | 0
-hit_percent     | 100.0000000000000000
--[ RECORD 5 ]---+--------------------------------------------------&zwsp;------------------
-query           | vacuum analyze pgbench_accounts
-calls           | 1
-total_exec_time | 136.448116
-rows            | 0
-hit_percent     | 99.9201915403032721
-
-bench=# SELECT pg_stat_statements_reset(0,0,0);
-
-bench=# SELECT query, calls, total_exec_time, rows, 100.0 * shared_blks_hit /
-               nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent
-          FROM pg_tracing ORDER BY total_exec_time DESC LIMIT 5;
--[ RECORD 1 ]---+--------------------------------------------------&zwsp;---------------------------
-query           | SELECT pg_stat_statements_reset(0,0,0)
-calls           | 1
-total_exec_time | 0.189497
-rows            | 1
-hit_percent     |
--[ RECORD 2 ]---+--------------------------------------------------&zwsp;---------------------------
-query           | SELECT query, calls, total_exec_time, rows, $1 * shared_blks_hit /          +
-                |                nullif(shared_blks_hit + shared_blks_read, $2) AS hit_percent+
-                |           FROM pg_tracing ORDER BY total_exec_time DESC LIMIT $3
-calls           | 0
-total_exec_time | 0
-rows            | 0
-hit_percent     |
+=# select trace_id, parent_id, span_id, span_start, duration, name, resource from pg_tracing_consume_spans;
+ trace_id | parent_id | span_id | span_start | duration | name | resource
+----------+-----------+---------+------------+----------+------+----------
+(0 rows)
 
 </screen>
  </sect2>
