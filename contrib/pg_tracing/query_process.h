@@ -13,7 +13,7 @@ extern const char *normalise_query_parameters(const JumbleState *jstate, const c
 											  int query_loc, int *query_len_p, char **param_str,
 											  int *param_len);
 
-extern void extract_traceparent(pgTracingTrace * pgTracingTrace, const char *query_str, bool is_parameter);
+extern void extract_traceparent(pgTracingTraceContext * trace_context, const char *query_str, bool is_parameter);
 
 /*
  * Normalise simple query
@@ -23,7 +23,6 @@ bool		text_store_file(pgTracingSharedState * pg_tracing, const char *query,
 							int query_len, Size *query_offset);
 extern const char *qtext_load_file(Size *buffer_size);
 extern const char *qtext_load_file(Size *buffer_size);
-extern void initialize_traceparent(pgTracingTrace * traceparent_parameter);
 
 /* Location of external text file */
 #define PG_TRACING_TEXT_FILE	PG_STAT_TMP_DIR "/pg_tracing.stat"

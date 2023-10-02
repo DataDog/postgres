@@ -91,14 +91,14 @@ typedef struct
 	int64		ns;				/* Monotonic clock at the start of the trace */
 }			pgTracingStartTime;
 
-typedef struct pgTracingTrace
+typedef struct pgTracingTraceContext
 {
 	uint64		trace_id;		/* Id of the trace */
 	uint64		parent_id;		/* Span id of the parent */
 	int			sampled;		/* Is current statement sampled? */
 	uint64		query_id;		/* Query id of the current statement */
 	pgTracingStartTime start_trace;
-}			pgTracingTrace;
+}			pgTracingTraceContext;
 
 /*
  * The Span data structure represents an operation with a start, a duration
@@ -149,7 +149,7 @@ typedef struct Span
 								 * 0 if query was successful */
 }			Span;
 
-extern void begin_span(Span * span, SpanType type, const pgTracingTrace * trace, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level);
+extern void begin_span(Span * span, SpanType type, const pgTracingTraceContext * trace, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level);
 extern void end_span(Span * span, const int64 *end_time);
 
 extern SpanType command_type_to_span_type(CmdType cmd_type);

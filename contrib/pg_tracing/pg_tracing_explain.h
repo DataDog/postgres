@@ -7,7 +7,7 @@
 /* Context needed when generating spans from planstate */
 typedef struct planstateTraceContext
 {
-	pgTracingTrace *trace;
+	pgTracingTraceContext *trace_context;
 	int			sql_error_code;
 	List	   *ancestors;
 	List	   *deparse_ctx;

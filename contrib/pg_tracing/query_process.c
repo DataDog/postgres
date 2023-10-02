@@ -7,17 +7,6 @@
 #include "nodes/extensible.h"
 
 /*
- * Initialize traceparent parameter fields
- */
-void
-initialize_traceparent(pgTracingTrace * traceparent_parameter)
-{
-	traceparent_parameter->sampled = 0;
-	traceparent_parameter->trace_id = 0;
-	traceparent_parameter->parent_id = 0;
-}
-
-/*
  * Extract traceparent parameters from SQLCommenter
  *
  * We're expecting the query to start with a SQLComment containing the
@@ -32,7 +21,7 @@ initialize_traceparent(pgTracingTrace * traceparent_parameter)
  * won't have the comment start and end.
  */
 void
-extract_traceparent(pgTracingTrace * pgTracingTrace, const char *sqlcomment_str, bool is_parameter)
+extract_traceparent(pgTracingTraceContext * pgTracingTraceContext, const char *sqlcomment_str, bool is_parameter)
 {
 	const char *expected_start = "/*";
 	const char *traceparent;
@@ -86,19 +75,19 @@ extract_traceparent(pgTracingTrace * pgTracingTrace, const char *sqlcomment_str,
 	 * Parse traceparent parameters
 	 */
 	errno = 0;
-	pgTracingTrace->trace_id = strtol(&traceparent[3], &endptr, 16);
+	pgTracingTraceContext->trace_id = strtol(&traceparent[3], &endptr, 16);
 	if (endptr != traceparent + 35 || errno)
 		return;
-	pgTracingTrace->parent_id = strtol(&traceparent[36], &endptr, 16);
+	pgTracingTraceContext->parent_id = strtol(&traceparent[36], &endptr, 16);
 	if (endptr != traceparent + 52 || errno)
 		return;
-	pgTracingTrace->sampled = strtol(&traceparent[53], &endptr, 16);
+	pgTracingTraceContext->sampled = strtol(&traceparent[53], &endptr, 16);
 	if (endptr != traceparent + 55 || errno)
 
 		/*
 		 * Just to be sure, reset sampled on error
 		 */
-		pgTracingTrace->sampled = 0;
+		pgTracingTraceContext->sampled = 0;
 }
 
 

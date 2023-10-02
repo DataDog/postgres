@@ -36,7 +36,7 @@ command_type_to_span_type(CmdType cmd_type)
  * Initialize span fields
  */
 static void
-initialize_span_fields(Span * span, SpanType type, const pgTracingTrace * trace, uint64 parent_id, uint64 query_id, int nested_level)
+initialize_span_fields(Span * span, SpanType type, const pgTracingTraceContext * trace, uint64 parent_id, uint64 query_id, int nested_level)
 {
 	span->trace_id = trace->trace_id;
 	span->type = type;
@@ -96,7 +96,7 @@ initialize_span_fields(Span * span, SpanType type, const pgTracingTrace * trace,
  * need to rely on monotonic clock as much as possible to have the best precision.
  *
  * For that, after we've established that a query was sampled, we get both the wall clock
- * and the monotonic clock at the start of a trace. They are both stored in pgTracingTrace.
+ * and the monotonic clock at the start of a trace. They are both stored in pgTracingTraceContext.
  * All subsequent times will use the monotonic clock.
  * When we need to get the start of a span, we use the starting wall clock as a starting point
  * and add the time between the two monotonic clocks.
@@ -105,12 +105,12 @@ initialize_span_fields(Span * span, SpanType type, const pgTracingTrace * trace,
  * This parameter is mostly used when generating spans from planstate as we need to rely on the query instrumentation to find the node start.
  */
 void
-begin_span(Span * span, SpanType type, const pgTracingTrace * trace, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level)
+begin_span(Span * span, SpanType type, const pgTracingTraceContext * trace_context, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level)
 {
 	int64		start_ns_time;
 	int64		ns_since_trace_start;
 
-	initialize_span_fields(span, type, trace, parent_id, query_id, nested_level);
+	initialize_span_fields(span, type, trace_context, parent_id, query_id, nested_level);
 
 	/* If no start span is provided, get the current one */
 	if (start_span == NULL)
@@ -122,10 +122,10 @@ begin_span(Span * span, SpanType type, const pgTracingTrace * trace, uint64 pare
 	span->start_ns_time = start_ns_time;
 
 	/* Get the ns between trace start and span start */
-	ns_since_trace_start = (start_ns_time - trace->start_trace.ns);
+	ns_since_trace_start = (start_ns_time - trace_context->start_trace.ns);
 
 	/* Fill span starts */
-	span->start = trace->start_trace.ts + ns_since_trace_start / NS_PER_US;
+	span->start = trace_context->start_trace.ts + ns_since_trace_start / NS_PER_US;
 	span->start_ns = ns_since_trace_start % NS_PER_US;
 }
 
