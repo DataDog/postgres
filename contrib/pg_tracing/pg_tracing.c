@@ -223,7 +223,7 @@ typedef struct pgTracingPerLevelBuffer
 	uint64		executor_run_id;	/* Span id of executor run spans by nested
 									 * level Executor run is used as parent
 									 * for spans generated from planstate */
-	uint64_t	query_id;		/* Query id by nested level when available */
+	uint64		query_id;		/* Query id by nested level when available */
 }			pgTracingPerLevelBuffer;
 
 static pgTracingPerLevelBuffer * per_level_buffers;
@@ -1465,10 +1465,10 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	Assert(parent_id > 0);
 
 	/*
-	 * We only create parse span when we have a good idea of when the parse
-	 * start. For nested queries created from the queryDesc
+	 * We only create parse span when we have a good idea of when parsing
+	 * started. For nested queries created from the queryDesc
 	 * (nested_query_start_ns == 0), we can't get a reliable time for the
-	 * parse start. We don't create Parse span in this case for now.
+	 * parse start and don't create it.
 	 */
 	if (exec_nested_level == 0 || nested_query_start_ns > 0)
 	{
@@ -1477,7 +1477,7 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 		/*
 		 * We don't have a precise time for parse end, estimate it
 		 *
-		 * TODO: Can we get a more precise start of parse
+		 * TODO: Can we get a more precise start of parse?
 		 */
 		int64		end_parse_ns = start_post_parse_ns - 1000;
 		int			parse_index = get_index_from_trace_spans();
