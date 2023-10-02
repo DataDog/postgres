@@ -267,6 +267,7 @@ static void pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryStrin
 static void generate_member_nodes(PlanState **planstates, int nplans, planstateTraceContext * planstateTraceContext, uint64 parent_id);
 static void generate_span_from_planstate(PlanState *planstate, planstateTraceContext * planstateTraceContext, uint64 parent_id);
 static pgTracingStats get_empty_pg_tracing_stats(void);
+static void pg_tracing_xact_callback(XactEvent event, void *arg);
 
 /*
  * Module load callback
@@ -486,6 +487,8 @@ _PG_init(void)
 
 	prev_ProcessUtility = ProcessUtility_hook;
 	ProcessUtility_hook = pg_tracing_ProcessUtility;
+
+	RegisterXactCallback(pg_tracing_xact_callback, NULL);
 }
 
 /*
@@ -896,7 +899,7 @@ apply_sample_rate(struct pgTracingTraceContext const *traceparent_parameter)
  * first parameter.
  */
 static void
-check_traceparameter_in_parameter(ParamListInfo params)
+extract_trace_context_from_parameter(struct pgTracingTraceContext *trace_context, ParamListInfo params)
 {
 	Oid			typoutput;
 	bool		typisvarlena;
@@ -914,14 +917,14 @@ check_traceparameter_in_parameter(ParamListInfo params)
 	/* Get the text of the first string parameter */
 	getTypeOutputInfo(param.ptype, &typoutput, &typisvarlena);
 	pstring = OidOutputFunctionCall(typoutput, param.value);
-	extract_traceparent(&current_trace_context, pstring, true);
+	extract_trace_context_from_query(trace_context, pstring, true);
 }
 
 /*
  * Check whether the current query should be sampled or not
  */
 static void
-check_query_sampled(ParseState *pstate, const ParamListInfo params)
+extract_trace_context(struct pgTracingTraceContext *trace_context, ParseState *pstate, const ParamListInfo params)
 {
 	TimestampTz statement_start_ts;
 
@@ -930,7 +933,7 @@ check_query_sampled(ParseState *pstate, const ParamListInfo params)
 		return;
 
 	/* sampling already started */
-	if (current_trace_context.sampled > 0)
+	if (trace_context->sampled > 0)
 		return;
 
 	/* Don't start tracing if we're not at the top */
@@ -943,18 +946,18 @@ check_query_sampled(ParseState *pstate, const ParamListInfo params)
 	 */
 	if (IsParallelWorker())
 	{
-		fetch_parallel_context(&current_trace_context);
+		fetch_parallel_context(trace_context);
 		return;
 	}
 
 	Assert(max_nested_level = -1);
 
-	current_trace_context.trace_id = 0;
-	current_trace_context.parent_id = 0;
+	trace_context->trace_id = 0;
+	trace_context->parent_id = 0;
 	if (params != NULL)
-		check_traceparameter_in_parameter(params);
+		extract_trace_context_from_parameter(trace_context, params);
 	else if (pstate != NULL)
-		extract_traceparent(&current_trace_context, pstate->p_sourcetext, false);
+		extract_trace_context_from_query(trace_context, pstate->p_sourcetext, false);
 
 	/*
 	 * A statement can go through this function 3 times: post parsing, planner
@@ -965,19 +968,19 @@ check_query_sampled(ParseState *pstate, const ParamListInfo params)
 	 * TODO: Can we use commandId?
 	 */
 	statement_start_ts = GetCurrentStatementStartTimestamp();
-	if (current_trace_context.sampled == 0 && last_statement_check_for_sampling == statement_start_ts)
+	if (trace_context->sampled == 0 && last_statement_check_for_sampling == statement_start_ts)
 		return;
 	/* First time we see this statement, save the time */
 	last_statement_check_for_sampling = statement_start_ts;
 
-	current_trace_context.sampled = apply_sample_rate(&current_trace_context);
+	trace_context->sampled = apply_sample_rate(trace_context);
 
-	if (current_trace_context.sampled > 0 && check_full_shared_spans())
+	if (trace_context->sampled > 0 && check_full_shared_spans())
 		/* Buffer is full, abort sampling */
-		current_trace_context.sampled = 0;
+		trace_context->sampled = 0;
 
-	if (current_trace_context.sampled > 0)
-		set_traceparent_trace_id(&current_trace_context);
+	if (trace_context->sampled > 0)
+		set_traceparent_trace_id(trace_context);
 }
 
 /*
@@ -1046,7 +1049,6 @@ cleanup_tracing(void)
 	if (current_trace_context.sampled == 0)
 		/* No need for cleaning */
 		return;
-	remove_parallel_context();
 	MemoryContextReset(pg_tracing_mem_ctx);
 	current_trace_context.sampled = 0;
 	current_trace_context.trace_id = 0;
@@ -1150,7 +1152,7 @@ handle_pg_error(int span_index, QueryDesc *queryDesc)
 	}
 
 	/* End tracing */
-	end_tracing(&end_span_ns);
+	// end_tracing(&end_span_ns);
 }
 
 /*
@@ -1435,15 +1437,15 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 *
 	 * TODO: Find a way to keep parse span for the next statement
 	 */
-	if (!pg_tracing_mem_ctx->isReset && exec_nested_level == 0)
-		return;
+//	if (!pg_tracing_mem_ctx->isReset && exec_nested_level == 0)
+//		return;
 
 	/* If disabled, don't trace utility statement */
 	if (query->utilityStmt && !pg_tracing_track_utility)
 		return;
 
 	/* Evaluate if query is sampled or not */
-	check_query_sampled(pstate, NULL);
+	extract_trace_context(&current_trace_context, pstate, NULL);
 
 	if (current_trace_context.sampled == 0)
 		/* Query is not sampled, nothing to do */
@@ -1515,7 +1517,7 @@ pg_tracing_planner_hook(Query *query,
 	Span	   *span_planner;
 
 	/* Evaluate if query is sampled or not */
-	check_query_sampled(NULL, params);
+	extract_trace_context(&current_trace_context, NULL, params);
 
 	if (current_trace_context.sampled == 0 || !pg_tracing_enabled(plan_nested_level + exec_nested_level))
 	{
@@ -1591,7 +1593,7 @@ pg_tracing_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	int			instrument_options;
 
 	/* Evaluate if query is sampled or not */
-	check_query_sampled(NULL, queryDesc->params);
+	extract_trace_context(&current_trace_context, NULL, queryDesc->params);
 
 	if (current_trace_context.sampled > 0 && pg_tracing_enabled(exec_nested_level))
 	{
@@ -1754,6 +1756,22 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 	}
 }
 
+static void
+pg_tracing_xact_callback(XactEvent event, void *arg)
+{
+	if (current_trace_context.sampled == false)
+		return;
+	switch (event) {
+		case XACT_EVENT_COMMIT:
+		case XACT_EVENT_PARALLEL_COMMIT:
+		case XACT_EVENT_ABORT:
+		case XACT_EVENT_PARALLEL_ABORT:
+			end_tracing(NULL);
+		default:
+			return;
+	}
+}
+
 /*
  * ExecutorEnd hook:
  * - process queryDesc to generate span from planstate
@@ -1798,7 +1816,7 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 		/* End top span, executor_end span and tracing */
 		end_top_span(exec_nested_level, end_span_ns);
 		end_span_index(executor_end_index, &end_span_ns);
-		end_tracing(&end_span_ns);
+		remove_parallel_context();
 	}
 }
 
@@ -1839,12 +1857,12 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 		 * through ExecutorEnd (ex: prepare statement). Check and end tracing
 		 * here in this case.
 		 */
-		if (!pg_tracing_mem_ctx->isReset)
-		{
-			Assert(current_trace_context.sampled);
-			Assert(exec_nested_level == 0);
-			end_tracing(NULL);
-		}
+//		if (!pg_tracing_mem_ctx->isReset)
+//		{
+//			Assert(current_trace_context.sampled);
+//			Assert(exec_nested_level == 0);
+//			end_tracing(NULL);
+//		}
 		return;
 	}
 
@@ -1922,7 +1940,7 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	Assert(previous_top_span->start <= process_utility_span->start);
 	Assert(get_span_end_ns(previous_top_span) >= get_span_end_ns(process_utility_span));
 
-	end_tracing(&end_span_ns);
+	// end_tracing(&end_span_ns);
 
 	/*
 	 * We may iterate through a list of nested ProcessUtility calls, update

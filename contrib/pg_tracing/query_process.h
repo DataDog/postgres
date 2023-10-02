@@ -13,7 +13,7 @@ extern const char *normalise_query_parameters(const JumbleState *jstate, const c
 											  int query_loc, int *query_len_p, char **param_str,
 											  int *param_len);
 
-extern void extract_traceparent(pgTracingTraceContext * trace_context, const char *query_str, bool is_parameter);
+extern void extract_trace_context_from_query(pgTracingTraceContext * trace_context, const char *query_str, bool is_parameter);
 
 /*
  * Normalise simple query

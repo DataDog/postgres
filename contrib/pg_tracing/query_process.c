@@ -21,7 +21,7 @@
  * won't have the comment start and end.
  */
 void
-extract_traceparent(pgTracingTraceContext * pgTracingTraceContext, const char *sqlcomment_str, bool is_parameter)
+extract_trace_context_from_query(pgTracingTraceContext * pgTracingTraceContext, const char *sqlcomment_str, bool is_parameter)
 {
 	const char *expected_start = "/*";
 	const char *traceparent;
