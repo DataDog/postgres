@@ -261,7 +261,6 @@ static void pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryStrin
 static void generate_member_nodes(PlanState **planstates, int nplans, planstateTraceContext * planstateTraceContext, uint64 parent_id);
 static void generate_span_from_planstate(PlanState *planstate, planstateTraceContext * planstateTraceContext, uint64 parent_id);
 static pgTracingStats get_empty_pg_tracing_stats(void);
-static void pg_tracing_xact_callback(XactEvent event, void *arg);
 
 /*
  * Module load callback
@@ -481,8 +480,6 @@ _PG_init(void)
 
 	prev_ProcessUtility = ProcessUtility_hook;
 	ProcessUtility_hook = pg_tracing_ProcessUtility;
-
-	RegisterXactCallback(pg_tracing_xact_callback, NULL);
 }
 
 /*
@@ -744,7 +741,7 @@ static void
 add_span_to_shared_buffer_locked(const Span * span)
 {
 	/* Spans must be ended before adding them to the shared buffer */
-	// Assert(span->ended);
+	Assert(span->ended);
 	if (shared_spans->end + 1 >= shared_spans->max)
 		pg_tracing->stats.dropped_spans++;
 	else
@@ -1037,6 +1034,7 @@ cleanup_tracing(void)
 	if (current_trace_context.sampled == 0)
 		/* No need for cleaning */
 		return;
+	remove_parallel_context();
 	MemoryContextReset(pg_tracing_mem_ctx);
 	current_trace_context.sampled = 0;
 	current_trace_context.trace_id = 0;
@@ -1138,6 +1136,9 @@ handle_pg_error(int span_index, QueryDesc *queryDesc)
 		if (span->ended == false)
 			end_span(span, &end_span_ns);
 	}
+
+	/* End tracing */
+	end_tracing(&end_span_ns);
 }
 
 /*
@@ -1423,8 +1424,8 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 *
 	 * TODO: Find a way to keep parse span for the next statement
 	 */
-//	if (!pg_tracing_mem_ctx->isReset && exec_nested_level == 0)
-//		return;
+	if (!pg_tracing_mem_ctx->isReset && exec_nested_level == 0)
+		return;
 
 	/* If disabled, don't trace utility statement */
 	if (query->utilityStmt && !pg_tracing_track_utility)
@@ -1742,26 +1743,6 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 	}
 }
 
-static void
-pg_tracing_xact_callback(XactEvent event, void *arg)
-{
-	Span *root_span;
-	if (current_trace_context.sampled == false)
-		return;
-	root_span = get_top_span_for_nested_level(0);
-	if (root_span->ended == false)
-		return;
-	switch (event) {
-		case XACT_EVENT_COMMIT:
-		case XACT_EVENT_PARALLEL_COMMIT:
-		case XACT_EVENT_ABORT:
-		case XACT_EVENT_PARALLEL_ABORT:
-			end_tracing(NULL);
-		default:
-			return;
-	}
-}
-
 /*
  * ExecutorEnd hook:
  * - process queryDesc to generate span from planstate
@@ -1807,7 +1788,6 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 		end_top_span(exec_nested_level, end_span_ns);
 		end_span_index(executor_end_index, &end_span_ns);
 		end_tracing(&end_span_ns);
-		remove_parallel_context();
 	}
 }
 
@@ -1842,6 +1822,18 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 			standard_ProcessUtility(pstmt, queryString, readOnlyTree,
 									context, params, queryEnv,
 									dest, qc);
+
+		/*
+		 * Tracing may have been started within the utility call without going
+		 * through ExecutorEnd (ex: prepare statement). Check and end tracing
+		 * here in this case.
+		 */
+		if (!pg_tracing_mem_ctx->isReset)
+		{
+			Assert(current_trace_context.sampled);
+			Assert(exec_nested_level == 0);
+			end_tracing(NULL);
+		}
 		return;
 	}
 
@@ -1918,6 +1910,8 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 
 	Assert(previous_top_span->start <= process_utility_span->start);
 	Assert(get_span_end_ns(previous_top_span) >= get_span_end_ns(process_utility_span));
+
+	end_tracing(&end_span_ns);
 
 	/*
 	 * We may iterate through a list of nested ProcessUtility calls, update
