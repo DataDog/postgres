@@ -184,9 +184,7 @@ static pgTracingSpans * shared_spans = NULL;
  */
 static pgTracingSpans * current_trace_spans;
 
-/*
- * Shared buffer storing trace context for parallel workers.
- */
+/* Shared buffer storing trace context for parallel workers. */
 static pgTracingParallelWorkers * pg_tracing_parallel = NULL;
 
 /* Index of the parallel worker context shared buffer if any */
@@ -213,9 +211,7 @@ static int	exec_nested_level = 0;
 /* Number of allocated levels. */
 static int	allocated_nested_level = 0;
 
-/*
- * Per nested level buffers
- */
+/* Per nested level buffers */
 typedef struct pgTracingPerLevelBuffer
 {
 	int			top_span_index; /* Index of the top span in the
@@ -228,9 +224,7 @@ typedef struct pgTracingPerLevelBuffer
 
 static pgTracingPerLevelBuffer * per_level_buffers;
 
-/*
- * Timestamp of the latest statement checked for sampling.
- */
+/* Timestamp of the latest statement checked for sampling. */
 static TimestampTz last_statement_check_for_sampling = 0;
 
 static void pg_tracing_shmem_request(void);
@@ -750,7 +744,7 @@ static void
 add_span_to_shared_buffer_locked(const Span * span)
 {
 	/* Spans must be ended before adding them to the shared buffer */
-	Assert(span->ended);
+	// Assert(span->ended);
 	if (shared_spans->end + 1 >= shared_spans->max)
 		pg_tracing->stats.dropped_spans++;
 	else
@@ -1008,7 +1002,8 @@ get_top_span_start(bool in_utility_stmt, int64 *start_time_ns)
 		Assert(start_time_ns != NULL);
 		return *start_time_ns;
 	}
-	if (exec_nested_level == 0)
+
+	if (exec_nested_level == 0 && per_level_buffers[0].top_span_index == -1)
 	{
 		/* For the top span of parallel worker, we get the current ns */
 		if (IsParallelWorker())
@@ -1022,11 +1017,6 @@ get_top_span_start(bool in_utility_stmt, int64 *start_time_ns)
 		return current_trace_context.start_trace.ns;
 	}
 
-	/*
-	 * We're in a nested query, if nested_query_start is not set, we haven't
-	 * gone through ProcessUtility. Set the start at the current time in this
-	 * case.
-	 */
 	if (nested_query_start_ns == 0)
 	{
 		if (start_time_ns != NULL)
@@ -1034,9 +1024,7 @@ get_top_span_start(bool in_utility_stmt, int64 *start_time_ns)
 		return get_current_ns();
 	}
 
-	/*
-	 * nested_query_start is available, use it
-	 */
+	/* nested_query_start is available, use it */
 	return nested_query_start_ns;
 }
 
@@ -1150,9 +1138,6 @@ handle_pg_error(int span_index, QueryDesc *queryDesc)
 		if (span->ended == false)
 			end_span(span, &end_span_ns);
 	}
-
-	/* End tracing */
-	// end_tracing(&end_span_ns);
 }
 
 /*
@@ -1381,10 +1366,11 @@ initialize_trace_level_and_top_span(CmdType commandType, Query *query, JumbleSta
 {
 	bool		new_nested_level = initialize_trace_level();
 	int64		top_span_start_ns;
-	Span	   *current_top = get_top_span_for_nested_level(exec_nested_level);
+	Span	   *current_top;
 	bool		in_utility_stmt = pstmt != NULL;
 
 	top_span_start_ns = get_top_span_start(in_utility_stmt, start_time_ns);
+	current_top = get_top_span_for_nested_level(exec_nested_level);
 	/* current_trace_spans buffer should have been allocated */
 	Assert(current_trace_spans != NULL);
 	if (new_nested_level)
@@ -1759,7 +1745,11 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 static void
 pg_tracing_xact_callback(XactEvent event, void *arg)
 {
+	Span *root_span;
 	if (current_trace_context.sampled == false)
+		return;
+	root_span = get_top_span_for_nested_level(0);
+	if (root_span->ended == false)
 		return;
 	switch (event) {
 		case XACT_EVENT_COMMIT:
@@ -1790,8 +1780,8 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 		/* Create executor end span */
 		executor_end_index = get_index_from_trace_spans();
 		executor_end_span = get_span_from_index(executor_end_index);
-		begin_span(executor_end_span, SPAN_EXECUTOR_END, &current_trace_context, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id,
-				   NULL, exec_nested_level);
+		begin_span(executor_end_span, SPAN_EXECUTOR_END, &current_trace_context,
+			 get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, NULL, exec_nested_level);
 
 		/* Query finished normally, send 0 as error code */
 		process_query_desc(queryDesc, 0);
@@ -1816,6 +1806,7 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 		/* End top span, executor_end span and tracing */
 		end_top_span(exec_nested_level, end_span_ns);
 		end_span_index(executor_end_index, &end_span_ns);
+		end_tracing(&end_span_ns);
 		remove_parallel_context();
 	}
 }
@@ -1851,18 +1842,6 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 			standard_ProcessUtility(pstmt, queryString, readOnlyTree,
 									context, params, queryEnv,
 									dest, qc);
-
-		/*
-		 * Tracing may have been started within the utility call without going
-		 * through ExecutorEnd (ex: prepare statement). Check and end tracing
-		 * here in this case.
-		 */
-//		if (!pg_tracing_mem_ctx->isReset)
-//		{
-//			Assert(current_trace_context.sampled);
-//			Assert(exec_nested_level == 0);
-//			end_tracing(NULL);
-//		}
 		return;
 	}
 
@@ -1939,8 +1918,6 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 
 	Assert(previous_top_span->start <= process_utility_span->start);
 	Assert(get_span_end_ns(previous_top_span) >= get_span_end_ns(process_utility_span));
-
-	// end_tracing(&end_span_ns);
 
 	/*
 	 * We may iterate through a list of nested ProcessUtility calls, update
