@@ -17,10 +17,6 @@
   <xref linkend="guc-shared-preload-libraries"/> in
   <filename>postgresql.conf</filename>, because it requires additional shared memory.
   This means that a server restart is needed to add or remove the module.
-  In addition, query identifier calculation must be enabled in order for the
-  module to be active, which is done automatically if <xref linkend="guc-compute-query-id"/>
-  is set to <literal>auto</literal> or <literal>on</literal>, or any third-party
-  module that calculates query identifiers is loaded.
  </para>
 
  <para>
@@ -93,7 +89,7 @@
        <structfield>queryid</structfield> <type>bigint</type>
       </para>
       <para>
-       Hash code to identify identical normalized queries
+       Hash code to identify identical normalized queries, 0 if query_id is disabled.
       </para></entry>
      </row>
 
@@ -455,6 +451,16 @@
     </tbody>
    </tgroup>
   </table>
+
+  <note>
+   <para>
+    The following details about constant replacement and
+    <structfield>queryid</structfield> only apply when <xref
+    linkend="guc-compute-query-id"/> is enabled.  If you use an external
+    module instead to compute <structfield>queryid</structfield>, you
+    should refer to its documentation for details.
+   </para>
+  </note>
 
  </sect2>
 
