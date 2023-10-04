@@ -63,6 +63,10 @@ SET plan_cache_mode='force_generic_plan';
 -- Execute prepare statement with trace context passed as a parameter and generic plan
 EXECUTE test_prepared('dddbs=''postgres.db'',traceparent=''00-00000000000000000000000000000010-0000000000000010-01''', 10);
 
+-- Cleanup
+SET plan_cache_mode='auto';
+DEALLOCATE test_prepared;
+
 -- Check spans are generated even through generic plan
 SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
 
@@ -83,12 +87,18 @@ SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by spa
 -- Reset export parameters setting
 SET pg_tracing.export_parameters=true;
 
+-- Check the result of disabling deparse
 SET pg_tracing.deparse_plan=false;
 /*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000c-000000000000000c-01'*/ SELECT * from pg_tracing_test where a=1;
 SET pg_tracing.deparse_plan=true;
 /*dddbs='postgres.db',traceparent='00-0000000000000000000000000000000d-000000000000000d-01'*/ SELECT * from pg_tracing_test where a=1;
 SELECT trace_id, resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
 
+-- Check multi statement query
+SET pg_tracing.sample_rate = 1.0;
+-- Force a multi-query statement with \;
+SELECT 1\; SELECT 1, 2;
+SELECT resource, parameters from pg_tracing_consume_spans order by span_start, span_start_ns, resource;
+
 -- Cleanup
-SET plan_cache_mode='auto';
-DEALLOCATE test_prepared;
+SET pg_tracing.sample_rate = 0.0;
