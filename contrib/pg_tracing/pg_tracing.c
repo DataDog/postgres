@@ -1410,7 +1410,7 @@ initialize_trace_level_and_top_span(struct pgTracingTraceContext *trace_context,
 
 		set_top_span(exec_nested_level, span_index);
 		begin_top_span(span, commandType, query, jstate, pstmt, query_text, start_span_ns);
-		return true;
+		return false;
 	}
 	return false;
 }
@@ -1431,7 +1431,7 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	int			post_parse_index = -1;
 	int64		start_post_parse_ns;
 	bool		extended_protocol_transaction;
-	bool 		top_span_created;
+	bool 		first_nested_level_top_span;
 	struct pgTracingTraceContext *trace_context = &current_trace_context;
 
 	if (prev_post_parse_analyze_hook)
@@ -1472,7 +1472,7 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 */
 	start_post_parse_ns = get_current_ns();
 
-	top_span_created = initialize_trace_level_and_top_span(trace_context, query->commandType, query,
+	first_nested_level_top_span = initialize_trace_level_and_top_span(trace_context, query->commandType, query,
 										jstate, NULL, pstate->p_sourcetext, start_post_parse_ns);
 
 	/*
@@ -1481,7 +1481,7 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 * (nested_query_start_ns == 0), we can't get a reliable time for the
 	 * parse start and don't create it.
 	 */
-	if ((exec_nested_level == 0 || nested_query_start_ns > 0) && !in_multi_statement_query && top_span_created)
+	if ((exec_nested_level == 0 || nested_query_start_ns > 0) && !in_multi_statement_query && first_nested_level_top_span)
 	{
 		Span	   *parse_span = NULL;
 		int64 		start_parse_span;
