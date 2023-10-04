@@ -152,7 +152,7 @@ typedef struct Span
 								 * 0 if query was successful */
 }			Span;
 
-extern void begin_span(Span * span, SpanType type, const pgTracingTraceContext * trace, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level);
+extern void begin_span(const pgTracingTraceContext * trace_context, Span * span, SpanType type, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level);
 extern void end_span(Span * span, const int64 *end_time);
 
 extern SpanType command_type_to_span_type(CmdType cmd_type);

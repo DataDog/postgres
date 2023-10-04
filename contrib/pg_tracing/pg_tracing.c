@@ -166,7 +166,6 @@ static MemoryContext pg_tracing_mem_ctx;
 static struct pgTracingTraceContext current_trace_context;
 
 static struct pgTracingTraceContext saved_trace_context;
-int64		saved_post_parse_ns;
 
 /* Shared state with stats and file external state */
 static pgTracingSharedState * pg_tracing = NULL;
@@ -995,27 +994,27 @@ adjust_file_offset(Span * span, Size file_position)
 		span->parameter_offset += file_position;
 }
 
-/*
- * Get the start time for a new top span
- */
-static int64
-get_top_span_start(const struct pgTracingTraceContext *trace_context, int64 current_ns)
-{
-	if (exec_nested_level == 0)
-	{
-		if (IsParallelWorker())
-			return current_ns;
-		if (in_multi_statement_query)
-			return current_ns;
-		return trace_context->start_trace.ns;
-	}
-	if (nested_query_start_ns == 0)
-		return current_ns;
-	/* nested_query_start is available, use it */
-	if (nested_query_start_ns > current_ns)
-		return current_ns;
-	return nested_query_start_ns;
-}
+///*
+// * Get the start time for a new top span
+// */
+//static int64
+//get_top_span_start(const struct pgTracingTraceContext *trace_context, int64 current_ns)
+//{
+//	if (exec_nested_level == 0)
+//	{
+//		if (IsParallelWorker())
+//			return current_ns;
+//		if (in_multi_statement_query)
+//			return current_ns;
+//		return trace_context->start_trace.ns;
+//	}
+//	if (nested_query_start_ns == 0)
+//		return current_ns;
+//	/* nested_query_start is available, use it */
+//	if (nested_query_start_ns > current_ns)
+//		return current_ns;
+//	return nested_query_start_ns;
+//}
 
 static void
 reset_trace_context(struct pgTracingTraceContext *trace_context)
@@ -1161,6 +1160,27 @@ get_parent_id(int nested_level)
 	return top_span->span_id;
 }
 
+static void
+set_trace_context_start(struct pgTracingTraceContext *trace_context)
+{
+	if (trace_context->start_trace.ts > 0)
+		return;
+	if (IsParallelWorker())
+		/*
+		 * Parallel workers will get the referential timers from the leader
+		 * parallel context
+		 */
+		return;
+
+	/* Start referential timers */
+	trace_context->start_trace.ts = GetCurrentStatementStartTimestamp();
+	/*
+	 * We can't get the monotonic clock at the start of the statement
+	 * so let's estimate it here.
+	 */
+	trace_context->start_trace.ns = get_current_ns() - (GetCurrentTimestamp() - current_trace_context.start_trace.ts) * NS_PER_US;
+}
+
 /*
  * If we enter a new nested level, initialize all necessary buffers
  * and start_trace timer.
@@ -1174,7 +1194,7 @@ get_parent_id(int nested_level)
  * Callers need to check that tracing was aborted.
  */
 static bool
-initialize_trace_level(void)
+initialize_trace_level(const struct pgTracingTraceContext *trace_context)
 {
 	/* Check if we've already created a top span for this nested level */
 	if (exec_nested_level <= max_nested_level)
@@ -1211,22 +1231,6 @@ initialize_trace_level(void)
 		current_trace_text = makeStringInfo();
 
 		MemoryContextSwitchTo(oldcxt);
-
-		/*
-		 * Parallel workers will get the referential timers from the leader
-		 * parallel context
-		 */
-		if (!IsParallelWorker())
-		{
-			/* Start referential timers */
-			current_trace_context.start_trace.ts = GetCurrentStatementStartTimestamp();
-
-			/*
-			 * We can't get the monotonic clock at the start of the statement
-			 * so let's estimate it here.
-			 */
-			current_trace_context.start_trace.ns = get_current_ns() - (GetCurrentTimestamp() - current_trace_context.start_trace.ts) * NS_PER_US;
-		}
 	}
 	else if (exec_nested_level >= allocated_nested_level)
 	{
@@ -1314,8 +1318,8 @@ begin_top_span(Span * top_span, CmdType commandType,
 	else if (current_trace_context.query_id > 0)
 		per_level_buffers[exec_nested_level].query_id = current_trace_context.query_id;
 
-	begin_span(top_span, command_type_to_span_type(commandType),
-			   &current_trace_context, get_parent_id(exec_nested_level - 1), per_level_buffers[exec_nested_level].query_id, &start_time_ns, exec_nested_level);
+	begin_span(&current_trace_context, top_span, command_type_to_span_type(commandType),
+			   get_parent_id(exec_nested_level - 1), per_level_buffers[exec_nested_level].query_id, &start_time_ns, exec_nested_level);
 	top_span->is_top_span = true;
 
 	if (IsParallelWorker())
@@ -1374,28 +1378,26 @@ begin_top_span(Span * top_span, CmdType commandType,
  * Initialise buffer if we are in a new nested level and start top span.
  * If the top span already exists for the current nested level, this has no effect.
  */
-static int64
-initialize_trace_level_and_top_span(const struct pgTracingTraceContext *trace_context, CmdType commandType, Query *query,
+static bool
+initialize_trace_level_and_top_span(struct pgTracingTraceContext *trace_context, CmdType commandType, Query *query,
 									JumbleState *jstate, const PlannedStmt *pstmt, const char *query_text, int64 start_span_ns)
 {
 	bool		new_nested_level;
 	Span	   *current_top;
-	int64		top_span_start_ns;
 
-	new_nested_level = initialize_trace_level();
+	new_nested_level = initialize_trace_level(trace_context);
+	set_trace_context_start(trace_context);
 	current_top = get_top_span_for_nested_level(exec_nested_level);
 	if (!new_nested_level && current_top->ended == false)
 		/* No need to create top span */
-		return 0;
-
-	top_span_start_ns = get_top_span_start(trace_context, start_span_ns);
-	Assert(top_span_start_ns <= start_span_ns);
+		return false;
 
 	/* current_trace_spans buffer should have been allocated */
 	Assert(current_trace_spans != NULL);
 	if (new_nested_level)
 	{
-		begin_top_span(current_top, commandType, query, jstate, pstmt, query_text, top_span_start_ns);
+		begin_top_span(current_top, commandType, query, jstate, pstmt, query_text, start_span_ns);
+		return true;
 	}
 	else if (current_top->ended == true)
 	{
@@ -1407,9 +1409,10 @@ initialize_trace_level_and_top_span(const struct pgTracingTraceContext *trace_co
 		Span	   *span = get_span_from_index(span_index);
 
 		set_top_span(exec_nested_level, span_index);
-		begin_top_span(span, commandType, query, jstate, pstmt, query_text, top_span_start_ns);
+		begin_top_span(span, commandType, query, jstate, pstmt, query_text, start_span_ns);
+		return true;
 	}
-	return top_span_start_ns;
+	return false;
 }
 
 /*
@@ -1427,9 +1430,8 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	Span	   *post_parse_span;
 	int			post_parse_index = -1;
 	int64		start_post_parse_ns;
-	uint64		parent_id;
-	int64		top_span_start_ns;
 	bool		extended_protocol_transaction;
+	bool 		top_span_created;
 	struct pgTracingTraceContext *trace_context = &current_trace_context;
 
 	if (prev_post_parse_analyze_hook)
@@ -1451,13 +1453,13 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 
 	reset_trace_context(&saved_trace_context);
 	/* Evaluate if query is sampled or not */
-	if (extended_protocol_transaction)
+	if (extended_protocol_transaction) {
 		/*
 		 * If there's an ongoing transaction in extended protocol,
 		 * save trace context
 		 */
 		trace_context = &saved_trace_context;
-	// TODO: Need to keep query id and start_trace
+	}
 	extract_trace_context(trace_context, pstate, NULL, true);
 
 	if (trace_context->sampled == 0)
@@ -1470,15 +1472,8 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 */
 	start_post_parse_ns = get_current_ns();
 
-	/*
-	 * Either we're inside a nested sampled query or we've parsed a query with
-	 * the sampled flag, start a new level with a top span
-	 */
-	top_span_start_ns = initialize_trace_level_and_top_span(trace_context, query->commandType, query,
-															jstate, NULL, pstate->p_sourcetext, start_post_parse_ns);
-
-	parent_id = get_parent_id(exec_nested_level);
-	Assert(parent_id > 0);
+	top_span_created = initialize_trace_level_and_top_span(trace_context, query->commandType, query,
+										jstate, NULL, pstate->p_sourcetext, start_post_parse_ns);
 
 	/*
 	 * We only create parse span when we have a good idea of when parsing
@@ -1486,9 +1481,10 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 	 * (nested_query_start_ns == 0), we can't get a reliable time for the
 	 * parse start and don't create it.
 	 */
-	if ((exec_nested_level == 0 || nested_query_start_ns > 0) && !in_multi_statement_query && top_span_start_ns > 0)
+	if ((exec_nested_level == 0 || nested_query_start_ns > 0) && !in_multi_statement_query && top_span_created)
 	{
 		Span	   *parse_span = NULL;
+		int64 		start_parse_span;
 
 		/*
 		 * We don't have a precise time for parse end, estimate it
@@ -1498,21 +1494,23 @@ pg_tracing_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jst
 		int64		end_parse_ns = start_post_parse_ns - 1000;
 		int			parse_index = get_index_from_trace_spans();
 
-		Assert(top_span_start_ns > 0);
+		if (nested_query_start_ns > 0)
+			start_parse_span = nested_query_start_ns;
+		else
+			start_parse_span = trace_context->start_trace.ns;
 
 		parse_span = get_span_from_index(parse_index);
-		begin_span(parse_span, SPAN_PARSE,
-				   trace_context, parent_id, per_level_buffers[exec_nested_level].query_id,
-				   &top_span_start_ns, exec_nested_level);
+		begin_span(trace_context, parse_span, SPAN_PARSE,
+				   get_parent_id(exec_nested_level - 1), per_level_buffers[exec_nested_level].query_id,
+				   &start_parse_span, exec_nested_level);
 		end_span(parse_span, &end_parse_ns);
 	}
 
 	/* Post parse span */
 	post_parse_index = get_index_from_trace_spans();
 	post_parse_span = get_span_from_index(post_parse_index);
-	begin_span(post_parse_span, SPAN_POST_PARSE,
-			   &current_trace_context,
-			   parent_id, per_level_buffers[exec_nested_level].query_id,
+	begin_span(trace_context, post_parse_span, SPAN_POST_PARSE,
+			   get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id,
 			   &start_post_parse_ns, exec_nested_level);
 	end_span(post_parse_span, NULL);
 }
@@ -1563,7 +1561,7 @@ pg_tracing_planner_hook(Query *query,
 	/* Start planner span */
 	span_planner_index = get_index_from_trace_spans();
 	span_planner = get_span_from_index(span_planner_index);
-	begin_span(span_planner, SPAN_PLANNER, &current_trace_context,
+	begin_span(&current_trace_context, span_planner, SPAN_PLANNER,
 			   get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
 
 	plan_nested_level++;
@@ -1640,7 +1638,7 @@ pg_tracing_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		/* Start executorStart Span */
 		executor_start_span_index = get_index_from_trace_spans();
 		executor_span = get_span_from_index(executor_start_span_index);
-		begin_span(executor_span, SPAN_EXECUTOR_START, &current_trace_context, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
+		begin_span(&current_trace_context, executor_span, SPAN_EXECUTOR_START, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
 
 		/*
 		 * Activate query instrumentation. Timer and rows instrumentation are
@@ -1687,7 +1685,7 @@ pg_tracing_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 		/* Start executor run span */
 		span_index = get_index_from_trace_spans();
 		executor_run_span = get_span_from_index(span_index);
-		begin_span(executor_run_span, SPAN_EXECUTOR_RUN, &current_trace_context, get_parent_id(exec_nested_level),
+		begin_span(&current_trace_context, executor_run_span, SPAN_EXECUTOR_RUN, get_parent_id(exec_nested_level),
 				   per_level_buffers[exec_nested_level].query_id, NULL, exec_nested_level);
 
 		/*
@@ -1747,7 +1745,7 @@ pg_tracing_ExecutorFinish(QueryDesc *queryDesc)
 
 		span_index = get_index_from_trace_spans();
 		executor_finish_span = get_span_from_index(span_index);
-		begin_span(executor_finish_span, SPAN_EXECUTOR_FINISH, &current_trace_context, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
+		begin_span(&current_trace_context, executor_finish_span, SPAN_EXECUTOR_FINISH, get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
 
 		/*
 		 * ExecutorFinish may create nested queries when executing triggers.
@@ -1801,7 +1799,7 @@ pg_tracing_ExecutorEnd(QueryDesc *queryDesc)
 		/* Create executor end span */
 		executor_end_index = get_index_from_trace_spans();
 		executor_end_span = get_span_from_index(executor_end_index);
-		begin_span(executor_end_span, SPAN_EXECUTOR_END, &current_trace_context,
+		begin_span(&current_trace_context, executor_end_span, SPAN_EXECUTOR_END,
 				   get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, NULL, exec_nested_level);
 
 		/* Query finished normally, send 0 as error code */
@@ -1894,7 +1892,7 @@ pg_tracing_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	/* Build the process utility span. */
 	process_utility_span_index = get_index_from_trace_spans();
 	process_utility_span = get_span_from_index(process_utility_span_index);
-	begin_span(process_utility_span, SPAN_PROCESS_UTILITY, &current_trace_context,
+	begin_span(&current_trace_context, process_utility_span, SPAN_PROCESS_UTILITY,
 			   get_parent_id(exec_nested_level), per_level_buffers[exec_nested_level].query_id, &start_span_ns, exec_nested_level);
 
 	/*
@@ -2046,7 +2044,7 @@ create_span_node(PlanState *planstate, planstateTraceContext * planstateTraceCon
 	span_index = get_index_from_trace_spans();
 	span = get_span_from_index(span_index);
 
-	begin_span(span, span_type, planstateTraceContext->trace_context, parent_id, per_level_buffers[exec_nested_level].query_id,
+	begin_span(planstateTraceContext->trace_context, span, span_type, parent_id, per_level_buffers[exec_nested_level].query_id,
 			   &start_span_ns, exec_nested_level);
 
 	/* first tuple time */

@@ -36,9 +36,9 @@ command_type_to_span_type(CmdType cmd_type)
  * Initialize span fields
  */
 static void
-initialize_span_fields(Span * span, SpanType type, const pgTracingTraceContext * trace, uint64 parent_id, uint64 query_id, int nested_level)
+initialize_span_fields(const pgTracingTraceContext * trace_context, Span * span, SpanType type, uint64 parent_id, uint64 query_id, int nested_level)
 {
-	span->trace_id = trace->trace_id;
+	span->trace_id = trace_context->trace_id;
 	span->type = type;
 
 	/*
@@ -49,8 +49,8 @@ initialize_span_fields(Span * span, SpanType type, const pgTracingTraceContext *
 	 */
 	if (parent_id == 0)
 	{
-		span->parent_id = trace->trace_id;
-		span->span_id = trace->trace_id;
+		span->parent_id = trace_context->trace_id;
+		span->span_id = trace_context->trace_id;
 	}
 	else
 	{
@@ -105,12 +105,12 @@ initialize_span_fields(Span * span, SpanType type, const pgTracingTraceContext *
  * This parameter is mostly used when generating spans from planstate as we need to rely on the query instrumentation to find the node start.
  */
 void
-begin_span(Span * span, SpanType type, const pgTracingTraceContext * trace_context, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level)
+begin_span(const pgTracingTraceContext * trace_context, Span * span, SpanType type, uint64 parent_id, uint64 query_id, const int64 *start_span, int nested_level)
 {
 	int64		start_ns_time;
 	int64		ns_since_trace_start;
 
-	initialize_span_fields(span, type, trace_context, parent_id, query_id, nested_level);
+	initialize_span_fields(trace_context, span, type, parent_id, query_id, nested_level);
 
 	/* If no start span is provided, get the current one */
 	if (start_span == NULL)
