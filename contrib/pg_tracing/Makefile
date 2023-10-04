@@ -15,8 +15,6 @@ PGFILEDESC = "pg_tracing - Distributed tracing for postgres"
 REGRESS_OPTS = --temp-config $(top_srcdir)/contrib/pg_tracing/pg_tracing.conf
 REGRESS = utility select insert trigger sample subxact reset nested wal parallel cleanup
 
-TAP_TESTS = 1
-
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
