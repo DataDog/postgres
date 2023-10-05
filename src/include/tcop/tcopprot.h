@@ -50,6 +50,7 @@ extern List *pg_analyze_and_rewrite_fixedparams(RawStmt *parsetree,
 												const Oid *paramTypes, int numParams,
 												QueryEnvironment *queryEnv);
 extern List *pg_analyze_and_rewrite_varparams(RawStmt *parsetree,
+											  const char *stmt_name,
 											  const char *query_string,
 											  Oid **paramTypes,
 											  int *numParams,

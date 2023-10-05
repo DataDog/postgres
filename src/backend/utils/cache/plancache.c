@@ -166,6 +166,7 @@ InitPlanCache(void)
  */
 CachedPlanSource *
 CreateCachedPlan(RawStmt *raw_parse_tree,
+				 const char *stmt_name,
 				 const char *query_string,
 				 CommandTag commandTag)
 {
@@ -196,6 +197,7 @@ CreateCachedPlan(RawStmt *raw_parse_tree,
 	plansource->magic = CACHEDPLANSOURCE_MAGIC;
 	plansource->raw_parse_tree = copyObject(raw_parse_tree);
 	plansource->query_string = pstrdup(query_string);
+	plansource->stmt_name = pstrdup(stmt_name);
 	MemoryContextSetIdentifier(source_context, plansource->query_string);
 	plansource->commandTag = commandTag;
 	plansource->param_types = NULL;

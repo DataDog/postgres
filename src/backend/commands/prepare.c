@@ -87,7 +87,7 @@ PrepareQuery(ParseState *pstate, PrepareStmt *stmt,
 	 * Create the CachedPlanSource before we do parse analysis, since it needs
 	 * to see the unmodified raw parse tree.
 	 */
-	plansource = CreateCachedPlan(rawstmt, pstate->p_sourcetext,
+	plansource = CreateCachedPlan(rawstmt, stmt->name, pstate->p_sourcetext,
 								  CreateCommandTag(stmt->query));
 
 	/* Transform list of TypeNames to array of type OIDs */
@@ -117,7 +117,7 @@ PrepareQuery(ParseState *pstate, PrepareStmt *stmt,
 	 * Rewrite the query. The result could be 0, 1, or many queries.
 	 */
 	query_list = pg_analyze_and_rewrite_varparams(rawstmt, pstate->p_sourcetext,
-												  &argtypes, &nargs, NULL);
+											      stmt->name, &argtypes, &nargs, NULL);
 
 	/* Finish filling in the CachedPlanSource */
 	CompleteCachedPlan(plansource,

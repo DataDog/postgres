@@ -144,9 +144,9 @@ parse_analyze_fixedparams(RawStmt *parseTree, const char *sourceText,
  * be modified or enlarged (via repalloc).
  */
 Query *
-parse_analyze_varparams(RawStmt *parseTree, const char *sourceText,
-						Oid **paramTypes, int *numParams,
-						QueryEnvironment *queryEnv)
+parse_analyze_varparams(RawStmt *parseTree, const char *named_stmt,
+						const char *sourceText, Oid **paramTypes,
+						int *numParams, QueryEnvironment *queryEnv)
 {
 	ParseState *pstate = make_parsestate(NULL);
 	Query	   *query;
@@ -161,6 +161,7 @@ parse_analyze_varparams(RawStmt *parseTree, const char *sourceText,
 	pstate->p_queryEnv = queryEnv;
 
 	query = transformTopLevelStmt(pstate, parseTree);
+	query->named_stmt = named_stmt;
 
 	/* make sure all is well with parameter types */
 	check_variable_parameters(pstate, query);

@@ -97,6 +97,7 @@ typedef struct CachedPlanSource
 {
 	int			magic;			/* should equal CACHEDPLANSOURCE_MAGIC */
 	struct RawStmt *raw_parse_tree; /* output of raw_parser(), or NULL */
+	const char *stmt_name;		/* source named statement */
 	const char *query_string;	/* source text of query */
 	CommandTag	commandTag;		/* 'nuff said */
 	Oid		   *param_types;	/* array of parameter type OIDs, or NULL */
@@ -189,6 +190,7 @@ extern void InitPlanCache(void);
 extern void ResetPlanCache(void);
 
 extern CachedPlanSource *CreateCachedPlan(struct RawStmt *raw_parse_tree,
+										  const char *stmt_name,
 										  const char *query_string,
 										  CommandTag commandTag);
 extern CachedPlanSource *CreateOneShotCachedPlan(struct RawStmt *raw_parse_tree,

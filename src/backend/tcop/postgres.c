@@ -706,6 +706,7 @@ pg_analyze_and_rewrite_fixedparams(RawStmt *parsetree,
  */
 List *
 pg_analyze_and_rewrite_varparams(RawStmt *parsetree,
+								 const char *named_stmt,
 								 const char *query_string,
 								 Oid **paramTypes,
 								 int *numParams,
@@ -722,8 +723,8 @@ pg_analyze_and_rewrite_varparams(RawStmt *parsetree,
 	if (log_parser_stats)
 		ResetUsage();
 
-	query = parse_analyze_varparams(parsetree, query_string, paramTypes, numParams,
-									queryEnv);
+	query = parse_analyze_varparams(parsetree, named_stmt, query_string, paramTypes,
+								 	numParams, queryEnv);
 
 	/*
 	 * Check all parameter types got determined.
@@ -1499,7 +1500,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 		 * Create the CachedPlanSource before we do parse analysis, since it
 		 * needs to see the unmodified raw parse tree.
 		 */
-		psrc = CreateCachedPlan(raw_parse_tree, query_string,
+		psrc = CreateCachedPlan(raw_parse_tree, stmt_name, query_string,
 								CreateCommandTag(raw_parse_tree->stmt));
 
 		/*
@@ -1517,6 +1518,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 		 * pg_analyze_and_rewrite_varparams().
 		 */
 		querytree_list = pg_analyze_and_rewrite_varparams(raw_parse_tree,
+														  stmt_name,
 														  query_string,
 														  &paramTypes,
 														  &numParams,
@@ -1530,8 +1532,8 @@ exec_parse_message(const char *query_string,	/* string to execute */
 	{
 		/* Empty input string.  This is legal. */
 		raw_parse_tree = NULL;
-		psrc = CreateCachedPlan(raw_parse_tree, query_string,
-								CMDTAG_UNKNOWN);
+		psrc = CreateCachedPlan(raw_parse_tree, stmt_name,
+						  		query_string, CMDTAG_UNKNOWN);
 		querytree_list = NIL;
 	}
 

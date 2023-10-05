@@ -2252,6 +2252,7 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 		 * needs to see the unmodified raw parse tree.
 		 */
 		plansource = CreateCachedPlan(parsetree,
+									  NULL,
 									  src,
 									  CreateCommandTag(parsetree->stmt));
 
