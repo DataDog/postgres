@@ -2669,6 +2669,7 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 					snap = InvalidSnapshot;
 
 				qdesc = CreateQueryDesc(stmt,
+										plansource->stmt_name,
 										plansource->query_string,
 										snap, crosscheck_snapshot,
 										dest,

@@ -36,6 +36,7 @@ Portal		ActivePortal = NULL;
 
 
 static void ProcessQuery(PlannedStmt *plan,
+						 const char *prepStmtName,
 						 const char *sourceText,
 						 ParamListInfo params,
 						 QueryEnvironment *queryEnv,
@@ -65,6 +66,7 @@ static void DoPortalRewind(Portal portal);
  */
 QueryDesc *
 CreateQueryDesc(PlannedStmt *plannedstmt,
+				const char *prepStmtName,
 				const char *sourceText,
 				Snapshot snapshot,
 				Snapshot crosscheck_snapshot,
@@ -77,6 +79,7 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 
 	qd->operation = plannedstmt->commandType;	/* operation */
 	qd->plannedstmt = plannedstmt;	/* plan */
+	qd->named_stmt = prepStmtName;	/* prepare stmt name */
 	qd->sourceText = sourceText;	/* query text */
 	qd->snapshot = RegisterSnapshot(snapshot);	/* snapshot */
 	/* RI check snapshot */
@@ -134,6 +137,7 @@ FreeQueryDesc(QueryDesc *qdesc)
  */
 static void
 ProcessQuery(PlannedStmt *plan,
+			 const char *prepStmtName,
 			 const char *sourceText,
 			 ParamListInfo params,
 			 QueryEnvironment *queryEnv,
@@ -145,7 +149,7 @@ ProcessQuery(PlannedStmt *plan,
 	/*
 	 * Create the QueryDesc object
 	 */
-	queryDesc = CreateQueryDesc(plan, sourceText,
+	queryDesc = CreateQueryDesc(plan, prepStmtName, sourceText,
 								GetActiveSnapshot(), InvalidSnapshot,
 								dest, params, queryEnv, 0);
 
@@ -493,6 +497,7 @@ PortalStart(Portal portal, ParamListInfo params,
 				 * the destination to DestNone.
 				 */
 				queryDesc = CreateQueryDesc(linitial_node(PlannedStmt, portal->stmts),
+											portal->prepStmtName,
 											portal->sourceText,
 											GetActiveSnapshot(),
 											InvalidSnapshot,
@@ -1275,6 +1280,7 @@ PortalRunMulti(Portal portal,
 			{
 				/* statement can set tag string */
 				ProcessQuery(pstmt,
+				 			 portal->prepStmtName,
 							 portal->sourceText,
 							 portal->portalParams,
 							 portal->queryEnv,
@@ -1284,6 +1290,7 @@ PortalRunMulti(Portal portal,
 			{
 				/* stmt added by rewrite cannot set tag */
 				ProcessQuery(pstmt,
+				 			 portal->prepStmtName,
 							 portal->sourceText,
 							 portal->portalParams,
 							 portal->queryEnv,

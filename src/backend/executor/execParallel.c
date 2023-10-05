@@ -1250,6 +1250,7 @@ ExecParallelGetQueryDesc(shm_toc *toc, DestReceiver *receiver,
 
 	/* Create a QueryDesc for the query. */
 	return CreateQueryDesc(pstmt,
+						   NULL,
 						   queryString,
 						   GetActiveSnapshot(), InvalidSnapshot,
 						   receiver, paramLI, NULL, instrument_options);
