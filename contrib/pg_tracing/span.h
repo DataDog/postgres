@@ -93,6 +93,7 @@ typedef struct
 
 typedef struct pgTracingTraceContext
 {
+	char		stmt_name[NAMEDATALEN];
 	uint64		trace_id;		/* Id of the trace */
 	uint64		parent_id;		/* Span id of the parent */
 	int			sampled;		/* Is current statement sampled? */
