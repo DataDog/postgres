@@ -1247,8 +1247,18 @@ sendquery_cleanup:
 		for (i = 0; i < pset.bind_nparams; i++)
 			free(pset.bind_params[i]);
 		free(pset.bind_params);
+		free(pset.stmtName);
 		pset.bind_params = NULL;
+		pset.stmtName = NULL;
 		pset.bind_flag = false;
+	}
+
+	/* clean up after \parse */
+	if (pset.parse_flag)
+	{
+		free(pset.stmtName);
+		pset.stmtName = NULL;
+		pset.parse_flag = false;
 	}
 
 	/* reset \gset trigger */
@@ -1274,7 +1284,6 @@ sendquery_cleanup:
 
 	return OK;
 }
-
 
 /*
  * DescribeQuery: describe the result columns of a query, without executing it
@@ -1424,7 +1433,7 @@ ExecQueryAndProcessResults(const char *query,
 	bool		return_early = false;
 	instr_time	before,
 				after;
-	PGresult   *result;
+	PGresult   *result = NULL;
 	FILE	   *gfile_fout = NULL;
 	bool		gfile_is_pipe = false;
 
@@ -1433,8 +1442,12 @@ ExecQueryAndProcessResults(const char *query,
 	else
 		INSTR_TIME_SET_ZERO(before);
 
-	if (pset.bind_flag)
+	if (pset.bind_flag && pset.stmtName == NULL)
 		success = PQsendQueryParams(pset.db, query, pset.bind_nparams, NULL, (const char *const *) pset.bind_params, NULL, NULL, 0);
+	else if (pset.bind_flag && pset.stmtName != NULL)
+		success = PQsendQueryPrepared(pset.db, pset.stmtName, pset.bind_nparams, (const char *const *) pset.bind_params, NULL, NULL, 0);
+	else if (pset.parse_flag)
+		success = PQsendPrepare(pset.db, pset.stmtName, query, 0, NULL);
 	else
 		success = PQsendQuery(pset.db, query);
 

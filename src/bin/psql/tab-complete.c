@@ -1705,7 +1705,7 @@ psql_completion(const char *text, int start, int end)
 	/* psql's backslash commands. */
 	static const char *const backslash_commands[] = {
 		"\\a",
-		"\\bind",
+		"\\bind", "\\bindx",
 		"\\connect", "\\conninfo", "\\C", "\\cd", "\\copy",
 		"\\copyright", "\\crosstabview",
 		"\\d", "\\da", "\\dA", "\\dAc", "\\dAf", "\\dAo", "\\dAp",
@@ -1723,7 +1723,7 @@ psql_completion(const char *text, int start, int end)
 		"\\if", "\\include", "\\include_relative", "\\ir",
 		"\\list", "\\lo_import", "\\lo_export", "\\lo_list", "\\lo_unlink",
 		"\\out",
-		"\\password", "\\print", "\\prompt", "\\pset",
+		"\\parse", "\\password", "\\print", "\\prompt", "\\pset",
 		"\\qecho", "\\quit",
 		"\\reset",
 		"\\s", "\\set", "\\setenv", "\\sf", "\\sv",

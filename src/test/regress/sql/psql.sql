@@ -45,6 +45,18 @@ SELECT 1 as one, 2 as two \g (format=csv csv_fieldsep='\t')
 SELECT 1 as one, 2 as two \gx (title='foo bar')
 \g
 
+-- \parse (extended query protocol)
+
+SELECT 1 \parse stmt1 \g
+SELECT $1 \parse stmt2 \g
+SELECT $1, $2 \parse stmt3 \g
+
+-- \bindx (extended query protocol)
+
+\bindx stmt1 \g
+\bindx stmt2 'foo' \g
+\bindx stmt3 'foo' 'bar' \g
+
 -- \bind (extended query protocol)
 
 SELECT 1 \bind \g
@@ -58,6 +70,9 @@ SELECT foo \bind \g
 SELECT 1 \; SELECT 2 \bind \g
 -- bind error
 SELECT $1, $2 \bind 'foo' \g
+-- bindx error
+\bindx stmt3 'baz' \g
+\bindx stmt4 'baz' \g
 
 -- \gset
 
