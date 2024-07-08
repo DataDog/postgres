@@ -288,7 +288,9 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 				ind;
 	Relation   *Irel;
 	int			nindexes;
-	bool		hasindex;
+	bool		verbose,
+				instrument,
+				hasindex;
 	VacAttrStats **vacattrstats;
 	AnlIndexData *indexdata;
 	int			targrows,
@@ -303,11 +305,15 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	Oid			save_userid;
 	int			save_sec_context;
 	int			save_nestlevel;
+	WalUsage	startwalusage = pgWalUsage;
 	BufferUsage startbufferusage = pgBufferUsage;
 	BufferUsage bufferusage;
 	PgStat_Counter startreadtime = 0;
 	PgStat_Counter startwritetime = 0;
 
+	verbose = (params->options & VACOPT_VERBOSE) != 0;
+	instrument = (verbose || (AmAutoVacuumWorkerProcess() &&
+							  params->log_min_duration >= 0));
 	if (inh)
 		ereport(elevel,
 				(errmsg("analyzing \"%s.%s\" inheritance tree",
@@ -340,7 +346,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	RestrictSearchPath();
 
 	/* measure elapsed time iff autovacuum logging requires it */
-	if (AmAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
+	if (instrument)
 	{
 		if (track_io_timing)
 		{
@@ -723,17 +729,19 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	vac_close_indexes(nindexes, Irel, NoLock);
 
 	/* Log the action if appropriate */
-	if (AmAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
+	if (instrument)
 	{
 		TimestampTz endtime = GetCurrentTimestamp();
 
-		if (params->log_min_duration == 0 ||
+		if (verbose || params->log_min_duration == 0 ||
 			TimestampDifferenceExceeds(starttime, endtime,
 									   params->log_min_duration))
 		{
 			long		delay_in_ms;
+			WalUsage	walusage;
 			double		read_rate = 0;
 			double		write_rate = 0;
+			char	   *msgfmt;
 			StringInfoData buf;
 			int64		total_blks_hit;
 			int64		total_blks_read;
@@ -746,6 +754,8 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 			 */
 			memset(&bufferusage, 0, sizeof(BufferUsage));
 			BufferUsageAccumDiff(&bufferusage, &pgBufferUsage, &startbufferusage);
+			memset(&walusage, 0, sizeof(WalUsage));
+			WalUsageAccumDiff(&walusage, &pgWalUsage, &startwalusage);
 
 			total_blks_hit = bufferusage.shared_blks_hit +
 				bufferusage.local_blks_hit;
@@ -790,7 +800,13 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 			 */
 
 			initStringInfo(&buf);
-			appendStringInfo(&buf, _("automatic analyze of table \"%s.%s.%s\"\n"),
+
+			if (AmAutoVacuumWorkerProcess())
+				msgfmt = _("automatic analyze of table \"%s.%s.%s\"\n");
+			else
+				msgfmt = _("analyze of table \"%s.%s.%s\"\n");
+
+			appendStringInfo(&buf, msgfmt,
 							 get_database_name(MyDatabaseId),
 							 get_namespace_name(RelationGetNamespace(onerel)),
 							 RelationGetRelationName(onerel));
@@ -808,9 +824,14 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 							 (long long) total_blks_hit,
 							 (long long) total_blks_read,
 							 (long long) total_blks_dirtied);
+			appendStringInfo(&buf,
+							 _("WAL usage: %lld records, %lld full page images, %llu bytes\n"),
+							 (long long) walusage.wal_records,
+							 (long long) walusage.wal_fpi,
+							 (unsigned long long) walusage.wal_bytes);
 			appendStringInfo(&buf, _("system usage: %s"), pg_rusage_show(&ru0));
 
-			ereport(LOG,
+			ereport(verbose ? INFO : LOG,
 					(errmsg_internal("%s", buf.data)));
 
 			pfree(buf.data);
