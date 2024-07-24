@@ -19,6 +19,18 @@
 /* To avoid including explain.h here, reference ExplainState thus: */
 struct ExplainState;
 
+typedef struct AcquireSampleStats
+{
+	BlockNumber rel_pages;		/* total number of pages */
+	BlockNumber scanned_pages;	/* # pages examined */
+	double		live_tuples;	/* # live tuples found in scanned pages */
+	double		dead_tuples;	/* # dead tuples found in scanned pages */
+
+	int			sampled_tuples; /* # sampled tuples */
+	double		total_live_tuples;	/* # estimated live tuples */
+	double		total_dead_tuples;	/* # estimated dead tuples */
+}			AcquireSampleStats;
+
 
 /*
  * Callback function signatures --- see fdwhandler.sgml for more info.
@@ -148,10 +160,8 @@ typedef void (*ExplainForeignModify_function) (ModifyTableState *mtstate,
 typedef void (*ExplainDirectModify_function) (ForeignScanState *node,
 											  struct ExplainState *es);
 
-typedef int (*AcquireSampleRowsFunc) (Relation relation, int elevel,
-									  HeapTuple *rows, int targrows,
-									  double *totalrows,
-									  double *totaldeadrows);
+typedef int (*AcquireSampleRowsFunc) (Relation relation, HeapTuple *rows,
+									  int targrows, AcquireSampleStats * sstats);
 
 typedef bool (*AnalyzeForeignTable_function) (Relation relation,
 											  AcquireSampleRowsFunc *func,

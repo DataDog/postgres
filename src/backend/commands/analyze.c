@@ -87,13 +87,12 @@ static void compute_index_stats(Relation onerel, double totalrows,
 								MemoryContext col_context);
 static VacAttrStats *examine_attribute(Relation onerel, int attnum,
 									   Node *index_expr);
-static int	acquire_sample_rows(Relation onerel, int elevel,
-								HeapTuple *rows, int targrows,
-								double *totalrows, double *totaldeadrows);
+static int	acquire_sample_rows(Relation onerel, HeapTuple *rows,
+								int targrows, AcquireSampleStats * sstats);
 static int	compare_rows(const void *a, const void *b, void *arg);
 static int	acquire_inherited_sample_rows(Relation onerel, int elevel,
 										  HeapTuple *rows, int targrows,
-										  double *totalrows, double *totaldeadrows);
+										  AcquireSampleStats * sstats);
 static void update_attstats(Oid relid, bool inh,
 							int natts, VacAttrStats **vacattrstats);
 static Datum std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
@@ -296,8 +295,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	int			targrows,
 				numrows,
 				minrows;
-	double		totalrows,
-				totaldeadrows;
+	AcquireSampleStats sstats;
 	HeapTuple  *rows;
 	PGRUsage	ru0;
 	TimestampTz starttime = 0;
@@ -524,14 +522,16 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	pgstat_progress_update_param(PROGRESS_ANALYZE_PHASE,
 								 inh ? PROGRESS_ANALYZE_PHASE_ACQUIRE_SAMPLE_ROWS_INH :
 								 PROGRESS_ANALYZE_PHASE_ACQUIRE_SAMPLE_ROWS);
+
+	memset(&sstats, 0, sizeof(AcquireSampleStats));
+
 	if (inh)
 		numrows = acquire_inherited_sample_rows(onerel, elevel,
 												rows, targrows,
-												&totalrows, &totaldeadrows);
+												&sstats);
 	else
-		numrows = (*acquirefunc) (onerel, elevel,
-								  rows, targrows,
-								  &totalrows, &totaldeadrows);
+		numrows = (*acquirefunc) (onerel, rows,
+								  targrows, &sstats);
 
 	/*
 	 * Compute the statistics.  Temporary results during the calculations for
@@ -562,7 +562,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 			stats->compute_stats(stats,
 								 std_fetch_func,
 								 numrows,
-								 totalrows);
+								 sstats.total_live_tuples);
 
 			/*
 			 * If the appropriate flavor of the n_distinct option is
@@ -582,7 +582,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 		}
 
 		if (nindexes > 0)
-			compute_index_stats(onerel, totalrows,
+			compute_index_stats(onerel, sstats.total_live_tuples,
 								indexdata, nindexes,
 								rows, numrows,
 								col_context);
@@ -607,7 +607,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 		}
 
 		/* Build extended statistics (if there are any). */
-		BuildRelationExtStatistics(onerel, inh, totalrows, numrows, rows,
+		BuildRelationExtStatistics(onerel, inh, sstats.total_live_tuples, numrows, rows,
 								   attr_cnt, vacattrstats);
 	}
 
@@ -641,7 +641,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 		CommandCounterIncrement();
 		vac_update_relstats(onerel,
 							relpages,
-							totalrows,
+							sstats.total_live_tuples,
 							relallvisible,
 							hasindex,
 							InvalidTransactionId,
@@ -655,7 +655,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 			AnlIndexData *thisdata = &indexdata[ind];
 			double		totalindexrows;
 
-			totalindexrows = ceil(thisdata->tupleFract * totalrows);
+			totalindexrows = ceil(thisdata->tupleFract * sstats.total_live_tuples);
 			vac_update_relstats(Irel[ind],
 								RelationGetNumberOfBlocks(Irel[ind]),
 								totalindexrows,
@@ -674,7 +674,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 		 * in their pg_class entries except for reltuples and relhasindex.
 		 */
 		CommandCounterIncrement();
-		vac_update_relstats(onerel, -1, totalrows,
+		vac_update_relstats(onerel, -1, sstats.total_live_tuples,
 							0, hasindex, InvalidTransactionId,
 							InvalidMultiXactId,
 							NULL, NULL,
@@ -691,8 +691,8 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	 * columns; otherwise, there is still work for auto-analyze to do.
 	 */
 	if (!inh)
-		pgstat_report_analyze(onerel, totalrows, totaldeadrows,
-							  (va_cols == NIL));
+		pgstat_report_analyze(onerel, sstats.total_live_tuples,
+							  sstats.total_dead_tuples, (va_cols == NIL));
 	else if (onerel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 		pgstat_report_analyze(onerel, 0, 0, (va_cols == NIL));
 
@@ -810,6 +810,26 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 							 get_database_name(MyDatabaseId),
 							 get_namespace_name(RelationGetNamespace(onerel)),
 							 RelationGetRelationName(onerel));
+
+			/*
+			 * Sampling from file_fdw and postgres_fdw won't report pages
+			 * stats nor live_tuples and dead_tuples. Just display tuples
+			 * sampled and total tuples estimate in this case.
+			 */
+			if (sstats.scanned_pages == 0)
+			{
+				appendStringInfo(&buf, _("tuples: %d tuples in samples, %.0f estimated total tuples\n"),
+								 sstats.sampled_tuples, sstats.total_live_tuples);
+			}
+			else
+			{
+				appendStringInfo(&buf, _("pages: %u of %u scanned\n"),
+								 sstats.scanned_pages, sstats.rel_pages);
+				appendStringInfo(&buf, _("tuples: %.0f live tuples, %.0f are dead; %d tuples in samples, %.0f estimated total tuples\n"),
+								 sstats.live_tuples, sstats.dead_tuples,
+								 sstats.sampled_tuples, sstats.total_live_tuples);
+			}
+
 			if (track_io_timing)
 			{
 				double		read_ms = (double) (pgStatBlockReadTime - startreadtime) / 1000;
@@ -1184,17 +1204,13 @@ block_sampling_read_stream_next(ReadStream *stream,
  * density near the start of the table.
  */
 static int
-acquire_sample_rows(Relation onerel, int elevel,
-					HeapTuple *rows, int targrows,
-					double *totalrows, double *totaldeadrows)
+acquire_sample_rows(Relation onerel, HeapTuple *rows,
+					int targrows, AcquireSampleStats * sstats)
 {
 	int			numrows = 0;	/* # rows now in reservoir */
 	double		samplerows = 0; /* total # rows collected */
-	double		liverows = 0;	/* # live rows seen */
-	double		deadrows = 0;	/* # dead rows seen */
 	double		rowstoskip = -1;	/* -1 means not set yet */
 	uint32		randseed;		/* Seed for block sampler(s) */
-	BlockNumber totalblocks;
 	TransactionId OldestXmin;
 	BlockSamplerData bs;
 	ReservoirStateData rstate;
@@ -1206,14 +1222,14 @@ acquire_sample_rows(Relation onerel, int elevel,
 
 	Assert(targrows > 0);
 
-	totalblocks = RelationGetNumberOfBlocks(onerel);
+	sstats->rel_pages = RelationGetNumberOfBlocks(onerel);
 
 	/* Need a cutoff xmin for HeapTupleSatisfiesVacuum */
 	OldestXmin = GetOldestNonRemovableTransactionId(onerel);
 
 	/* Prepare for sampling block numbers */
 	randseed = pg_prng_uint32(&pg_global_prng_state);
-	nblocks = BlockSampler_Init(&bs, totalblocks, targrows, randseed);
+	nblocks = BlockSampler_Init(&bs, sstats->rel_pages, targrows, randseed);
 
 	/* Report sampling block numbers */
 	pgstat_progress_update_param(PROGRESS_ANALYZE_BLOCKS_TOTAL,
@@ -1238,7 +1254,7 @@ acquire_sample_rows(Relation onerel, int elevel,
 	{
 		vacuum_delay_point();
 
-		while (table_scan_analyze_next_tuple(scan, OldestXmin, &liverows, &deadrows, slot))
+		while (table_scan_analyze_next_tuple(scan, OldestXmin, &sstats->live_tuples, &sstats->dead_tuples, slot))
 		{
 			/*
 			 * The first targrows sample rows are simply copied into the
@@ -1313,26 +1329,11 @@ acquire_sample_rows(Relation onerel, int elevel,
 	 */
 	if (bs.m > 0)
 	{
-		*totalrows = floor((liverows / bs.m) * totalblocks + 0.5);
-		*totaldeadrows = floor((deadrows / bs.m) * totalblocks + 0.5);
+		sstats->total_live_tuples = floor((sstats->live_tuples / bs.m) * sstats->rel_pages + 0.5);
+		sstats->total_dead_tuples = floor((sstats->dead_tuples / bs.m) * sstats->rel_pages + 0.5);
 	}
-	else
-	{
-		*totalrows = 0.0;
-		*totaldeadrows = 0.0;
-	}
-
-	/*
-	 * Emit some interesting relation info
-	 */
-	ereport(elevel,
-			(errmsg("\"%s\": scanned %d of %u pages, "
-					"containing %.0f live rows and %.0f dead rows; "
-					"%d rows in sample, %.0f estimated total rows",
-					RelationGetRelationName(onerel),
-					bs.m, totalblocks,
-					liverows, deadrows,
-					numrows, *totalrows)));
+	sstats->scanned_pages = bs.m;
+	sstats->sampled_tuples = numrows;
 
 	return numrows;
 }
@@ -1373,7 +1374,7 @@ compare_rows(const void *a, const void *b, void *arg)
 static int
 acquire_inherited_sample_rows(Relation onerel, int elevel,
 							  HeapTuple *rows, int targrows,
-							  double *totalrows, double *totaldeadrows)
+							  AcquireSampleStats * sstats)
 {
 	List	   *tableOIDs;
 	Relation   *rels;
@@ -1385,10 +1386,6 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 				i;
 	ListCell   *lc;
 	bool		has_child;
-
-	/* Initialize output parameters to zero now, in case we exit early */
-	*totalrows = 0;
-	*totaldeadrows = 0;
 
 	/*
 	 * Find all members of inheritance set.  We only need AccessShareLock on
@@ -1559,13 +1556,13 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 			if (childtargrows > 0)
 			{
 				int			childrows;
-				double		trows,
-							tdrows;
+				AcquireSampleStats childsstats;
+
+				memset(&childsstats, 0, sizeof(AcquireSampleStats));
 
 				/* Fetch a random sample of the child's rows */
-				childrows = (*acquirefunc) (childrel, elevel,
-											rows + numrows, childtargrows,
-											&trows, &tdrows);
+				childrows = (*acquirefunc) (childrel, rows + numrows,
+											childtargrows, &childsstats);
 
 				/* We may need to convert from child's rowtype to parent's */
 				if (childrows > 0 &&
@@ -1594,8 +1591,8 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 
 				/* And add to counts */
 				numrows += childrows;
-				*totalrows += trows;
-				*totaldeadrows += tdrows;
+				sstats->total_live_tuples += childsstats.total_live_tuples;
+				sstats->total_dead_tuples += childsstats.total_dead_tuples;
 			}
 		}
 

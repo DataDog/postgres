@@ -160,9 +160,8 @@ static void estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 static void estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
 						   FileFdwPlanState *fdw_private,
 						   Cost *startup_cost, Cost *total_cost);
-static int	file_acquire_sample_rows(Relation onerel, int elevel,
-									 HeapTuple *rows, int targrows,
-									 double *totalrows, double *totaldeadrows);
+static int	file_acquire_sample_rows(Relation onerel, HeapTuple *rows,
+									 int targrows, AcquireSampleStats * sstats);
 
 
 /*
@@ -1112,7 +1111,7 @@ estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
  * which must have at least targrows entries.
  * The actual number of rows selected is returned as the function result.
  * We also count the total number of rows in the file and return it into
- * *totalrows.  Note that *totaldeadrows is always set to 0.
+ * sstats->total_live_tuples.
  *
  * Note that the returned list of rows is not always in order by physical
  * position in the file.  Therefore, correlation estimates derived later
@@ -1120,11 +1119,9 @@ estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
  * currently (the planner only pays attention to correlation for indexscans).
  */
 static int
-file_acquire_sample_rows(Relation onerel, int elevel,
-						 HeapTuple *rows, int targrows,
-						 double *totalrows, double *totaldeadrows)
+file_acquire_sample_rows(Relation onerel, HeapTuple *rows,
+						 int targrows, AcquireSampleStats * sstats)
 {
-	int			numrows = 0;
 	double		rowstoskip = -1;	/* -1 means not set yet */
 	ReservoirStateData rstate;
 	TupleDesc	tupDesc;
@@ -1141,6 +1138,8 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 
 	Assert(onerel);
 	Assert(targrows > 0);
+	Assert(sstats->sampled_tuples == 0);
+	Assert(sstats->total_live_tuples == 0);
 
 	tupDesc = RelationGetDescr(onerel);
 	values = (Datum *) palloc(tupDesc->natts * sizeof(Datum));
@@ -1172,8 +1171,6 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
-	*totalrows = 0;
-	*totaldeadrows = 0;
 	for (;;)
 	{
 		/* Check for user-requested abort or sleep */
@@ -1196,9 +1193,9 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 		 * reach the end of the relation. This algorithm is from Jeff Vitter's
 		 * paper (see more info in commands/analyze.c).
 		 */
-		if (numrows < targrows)
+		if (sstats->sampled_tuples < targrows)
 		{
-			rows[numrows++] = heap_form_tuple(tupDesc, values, nulls);
+			rows[sstats->sampled_tuples++] = heap_form_tuple(tupDesc, values, nulls);
 		}
 		else
 		{
@@ -1208,7 +1205,7 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 			 * not-yet-incremented value of totalrows as t.
 			 */
 			if (rowstoskip < 0)
-				rowstoskip = reservoir_get_next_S(&rstate, *totalrows, targrows);
+				rowstoskip = reservoir_get_next_S(&rstate, sstats->total_live_tuples, targrows);
 
 			if (rowstoskip <= 0)
 			{
@@ -1226,7 +1223,7 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 			rowstoskip -= 1;
 		}
 
-		*totalrows += 1;
+		sstats->total_live_tuples += 1;
 	}
 
 	/* Remove error callback. */
@@ -1240,14 +1237,5 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 	pfree(values);
 	pfree(nulls);
 
-	/*
-	 * Emit some interesting relation info
-	 */
-	ereport(elevel,
-			(errmsg("\"%s\": file contains %.0f rows; "
-					"%d rows in sample",
-					RelationGetRelationName(onerel),
-					*totalrows, numrows)));
-
-	return numrows;
+	return sstats->sampled_tuples;
 }

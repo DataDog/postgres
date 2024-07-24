@@ -498,10 +498,8 @@ static void process_query_params(ExprContext *econtext,
 								 FmgrInfo *param_flinfo,
 								 List *param_exprs,
 								 const char **param_values);
-static int	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
-										  HeapTuple *rows, int targrows,
-										  double *totalrows,
-										  double *totaldeadrows);
+static int	postgresAcquireSampleRowsFunc(Relation relation, HeapTuple *rows,
+										  int targrows, AcquireSampleStats * sstats);
 static void analyze_row_processor(PGresult *res, int row,
 								  PgFdwAnalyzeState *astate);
 static void produce_tuple_asynchronously(AsyncRequest *areq, bool fetch);
@@ -5056,7 +5054,7 @@ postgresGetAnalyzeInfoForForeignTable(Relation relation, bool *can_tablesample)
  * which must have at least targrows entries.
  * The actual number of rows selected is returned as the function result.
  * We also count the total number of rows in the table and return it into
- * *totalrows.  Note that *totaldeadrows is always set to 0.
+ * sstats->total_live_tuples.
  *
  * Note that the returned list of rows is not always in order by physical
  * position in the table.  Therefore, correlation estimates derived later
@@ -5064,10 +5062,8 @@ postgresGetAnalyzeInfoForForeignTable(Relation relation, bool *can_tablesample)
  * currently (the planner only pays attention to correlation for indexscans).
  */
 static int
-postgresAcquireSampleRowsFunc(Relation relation, int elevel,
-							  HeapTuple *rows, int targrows,
-							  double *totalrows,
-							  double *totaldeadrows)
+postgresAcquireSampleRowsFunc(Relation relation, HeapTuple *rows,
+							  int targrows, AcquireSampleStats * sstats)
 {
 	PgFdwAnalyzeState astate;
 	ForeignTable *table;
@@ -5345,26 +5341,17 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 
 	ReleaseConnection(conn);
 
-	/* We assume that we have no dead tuple. */
-	*totaldeadrows = 0.0;
-
 	/*
 	 * Without sampling, we've retrieved all living tuples from foreign
 	 * server, so report that as totalrows.  Otherwise use the reltuples
 	 * estimate we got from the remote side.
 	 */
 	if (method == ANALYZE_SAMPLE_OFF)
-		*totalrows = astate.samplerows;
+		sstats->total_live_tuples = astate.samplerows;
 	else
-		*totalrows = reltuples;
+		sstats->total_live_tuples = reltuples;
 
-	/*
-	 * Emit some interesting relation info
-	 */
-	ereport(elevel,
-			(errmsg("\"%s\": table contains %.0f rows, %d rows in sample",
-					RelationGetRelationName(relation),
-					*totalrows, astate.numrows)));
+	sstats->sampled_tuples = astate.numrows;
 
 	return astate.numrows;
 }
