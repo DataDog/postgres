@@ -483,9 +483,7 @@ exec_command_bind(PsqlScanState scan_state, bool active_branch)
 		int			nparams = 0;
 		int			nalloc = 0;
 
-		pset.bind_params = NULL;
-		pset.stmtName = NULL;
-
+		clean_extended_state();
 		while ((opt = psql_scan_slash_option(scan_state, OT_NORMAL, NULL, false)))
 		{
 			nparams++;
@@ -521,9 +519,7 @@ exec_command_bind_named(PsqlScanState scan_state, bool active_branch,
 		int			nparams = 0;
 		int			nalloc = 0;
 
-		pset.bind_params = NULL;
-		pset.stmtName = NULL;
-
+		clean_extended_state();
 		/* get the mandatory prepared statement name */
 		opt = psql_scan_slash_option(scan_state, OT_NORMAL, NULL, false);
 		if (!opt)
@@ -719,7 +715,7 @@ exec_command_close(PsqlScanState scan_state, bool active_branch, const char *cmd
 		char	   *opt = psql_scan_slash_option(scan_state,
 												 OT_NORMAL, NULL, false);
 
-		pset.stmtName = NULL;
+		clean_extended_state();
 		if (!opt)
 		{
 			pg_log_error("\\%s: missing required argument", cmd);
@@ -2205,7 +2201,7 @@ exec_command_parse(PsqlScanState scan_state, bool active_branch,
 		char	   *opt = psql_scan_slash_option(scan_state,
 												 OT_NORMAL, NULL, false);
 
-		pset.stmtName = NULL;
+		clean_extended_state();
 		if (!opt)
 		{
 			pg_log_error("\\%s: missing required argument", cmd);
