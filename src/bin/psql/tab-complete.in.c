@@ -1895,7 +1895,7 @@ psql_completion(const char *text, int start, int end)
 		"\\parse", "\\password", "\\print", "\\prompt", "\\pset",
 		"\\qecho", "\\quit",
 		"\\reset",
-		"\\s", "\\set", "\\setenv", "\\sf", "\\startpipeline", "\\sv", "\\syncpipeline",
+		"\\s", "\\set", "\\setenv", "\\sf", "\\startpipeline", "\\sendpipeline", "\\sv", "\\syncpipeline",
 		"\\t", "\\T", "\\timing",
 		"\\unset",
 		"\\x",

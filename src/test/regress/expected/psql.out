@@ -4711,6 +4711,7 @@ invalid command \lo
 	\sf whole_line
 	\sv whole_line
 	\startpipeline
+	\sendpipeline
 	\syncpipeline
 	\t arg1
 	\T arg1

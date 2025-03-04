@@ -1079,6 +1079,7 @@ select \if false \\ (bogus \else \\ 42 \endif \\ forty_two;
 	\sf whole_line
 	\sv whole_line
 	\startpipeline
+	\sendpipeline
 	\syncpipeline
 	\t arg1
 	\T arg1
