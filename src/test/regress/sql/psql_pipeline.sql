@@ -210,18 +210,18 @@ SELECT $1 \bind 3 \sendpipeline
 \getresults 0
 \endpipeline
 
+-- Queries can be pipelined ';'. They will be sent using extended protocol.
+\startpipeline
+SELECT 1;
+SELECT $1 \bind 'val1' \sendpipeline
+SELECT 2;
+\endpipeline
+
 --
 -- Pipeline errors
 --
 
 -- \endpipeline outside of pipeline should fail
-\endpipeline
-
--- Query using simple protocol should not be sent and should leave the
--- pipeline usable.
-\startpipeline
-SELECT 1;
-SELECT $1 \bind 'val1' \sendpipeline
 \endpipeline
 
 -- After an aborted pipeline, commands after a \syncpipeline should be
@@ -237,6 +237,12 @@ SELECT $1 \bind 1 \sendpipeline
 \startpipeline
 SELECT \bind 'val1' \sendpipeline
 SELECT $1 \bind 'val1' \sendpipeline
+\endpipeline
+
+-- Using ';' with a parameter will trigger a incorrect parameter errors.
+\startpipeline
+SELECT $1;
+SELECT 1;
 \endpipeline
 
 -- An explicit transaction with an error needs to be rollbacked after
@@ -375,8 +381,8 @@ select 1;
 -- Error messages accumulate and are repeated.
 \startpipeline
 SELECT 1 \bind \sendpipeline
-SELECT 1;
-SELECT 1;
+\watch
+\watch
 \endpipeline
 
 --

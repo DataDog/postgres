@@ -387,24 +387,33 @@ SELECT $1 \bind 3 \sendpipeline
 (1 row)
 
 \endpipeline
+-- Queries can be pipelined ';'. They will be sent using extended protocol.
+\startpipeline
+SELECT 1;
+SELECT $1 \bind 'val1' \sendpipeline
+SELECT 2;
+\endpipeline
+ ?column? 
+----------
+        1
+(1 row)
+
+ ?column? 
+----------
+ val1
+(1 row)
+
+ ?column? 
+----------
+        2
+(1 row)
+
 --
 -- Pipeline errors
 --
 -- \endpipeline outside of pipeline should fail
 \endpipeline
 cannot send pipeline when not in pipeline mode
--- Query using simple protocol should not be sent and should leave the
--- pipeline usable.
-\startpipeline
-SELECT 1;
-PQsendQuery not allowed in pipeline mode
-SELECT $1 \bind 'val1' \sendpipeline
-\endpipeline
- ?column? 
-----------
- val1
-(1 row)
-
 -- After an aborted pipeline, commands after a \syncpipeline should be
 -- displayed.
 \startpipeline
@@ -425,6 +434,12 @@ SELECT \bind 'val1' \sendpipeline
 SELECT $1 \bind 'val1' \sendpipeline
 \endpipeline
 ERROR:  bind message supplies 1 parameters, but prepared statement "" requires 0
+-- Using ';' with a parameter will trigger a incorrect parameter errors.
+\startpipeline
+SELECT $1;
+SELECT 1;
+\endpipeline
+ERROR:  bind message supplies 0 parameters, but prepared statement "" requires 1
 -- An explicit transaction with an error needs to be rollbacked after
 -- the pipeline.
 \startpipeline
@@ -439,8 +454,7 @@ ROLLBACK;
 \startpipeline
 SELECT \bind \sendpipeline
 \watch 1
-PQsendQuery not allowed in pipeline mode
-
+\watch not allowed in pipeline mode
 \endpipeline
 --
 (1 row)
@@ -619,11 +633,10 @@ select 1;
 -- Error messages accumulate and are repeated.
 \startpipeline
 SELECT 1 \bind \sendpipeline
-SELECT 1;
-PQsendQuery not allowed in pipeline mode
-SELECT 1;
-PQsendQuery not allowed in pipeline mode
-PQsendQuery not allowed in pipeline mode
+\watch
+\watch not allowed in pipeline mode
+\watch
+\watch not allowed in pipeline mode
 \endpipeline
  ?column? 
 ----------

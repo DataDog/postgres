@@ -3698,14 +3698,19 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
        </para>
 
        <para>
-        Pipeline mode requires the use of the extended query protocol. All
-        queries need to be sent using the meta-commands
-        <literal>\bind</literal>, <literal>\bind_named</literal>,
-        <literal>\close</literal> or <literal>\parse</literal>. While a
-        pipeline is ongoing, <literal>\sendpipeline</literal> will append the
-        current query buffer to the pipeline. Other meta-commands like
-        <literal>\g</literal>, <literal>\gx</literal> or <literal>\gdesc</literal>
-        are not allowed in pipeline mode.
+        Pipeline mode requires the use of the extended query protocol. Queries
+        can be sent using the meta-commands <literal>\bind</literal>,
+        <literal>\bind_named</literal>, <literal>\close</literal> or
+        <literal>\parse</literal>. While a pipeline is ongoing,
+        <literal>\sendpipeline</literal> will append the current query
+        buffer to the pipeline. Other meta-commands like <literal>\g</literal>,
+        <literal>\gx</literal> or <literal>\gdesc</literal> are not allowed
+        in pipeline mode.
+       </para>
+
+       <para>
+        Queries can also be sent using <literal>;</literal>. While a pipeline is
+        ongoing, they will automatically be sent using extended query protocol.
        </para>
 
        <para>
