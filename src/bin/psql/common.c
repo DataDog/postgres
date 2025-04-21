@@ -1478,6 +1478,26 @@ discardAbortedPipelineResults(void)
 			 */
 			return res;
 		}
+		else if (res != NULL && result_status == PGRES_FATAL_ERROR)
+		{
+			/*
+			 * We have a fatal error sent by the backend, we can't recover
+			 * from this state. Instead, will return the last fatal error
+			 * and let the outer loop handle the errors.
+			 */
+			PGresult   *fatal_res;
+
+			pset.available_results = 0;
+			pset.requested_results = 0;
+
+			/*
+			 * Fetch result to consume the end of the current query being
+			 * processed.
+			 */
+			fatal_res = PQgetResult(pset.db);
+			Assert(fatal_res == NULL);
+			return res;
+		}
 		else if (res == NULL)
 		{
 			/* A query was processed, decrement the counters */
