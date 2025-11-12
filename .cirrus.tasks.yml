@@ -651,6 +651,7 @@ task:
       -Ddtrace=enabled
       -Dgssapi=enabled
       -Dlibcurl=enabled
+      -Dllvm=enabled
       -Dnls=enabled
       -Duuid=e2fs
 
@@ -658,6 +659,7 @@ task:
       ccache
       icu
       kerberos5
+      llvm-21
       lz4
       meson
       openldap
