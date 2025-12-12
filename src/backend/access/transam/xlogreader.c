@@ -1391,12 +1391,11 @@ XLogReaderResetError(XLogReaderState *state)
  * XLogReadRecord() will read the next valid record.
  */
 XLogRecPtr
-XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr)
+XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr, char **errormsg)
 {
 	XLogRecPtr	tmpRecPtr;
 	XLogRecPtr	found = InvalidXLogRecPtr;
 	XLogPageHeader header;
-	char	   *errormsg;
 
 	Assert(XLogRecPtrIsValid(RecPtr));
 
@@ -1481,7 +1480,7 @@ XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr)
 	 * or we just jumped over the remaining data of a continuation.
 	 */
 	XLogBeginRead(state, tmpRecPtr);
-	while (XLogReadRecord(state, &errormsg) != NULL)
+	while (XLogReadRecord(state, errormsg) != NULL)
 	{
 		/* past the record we've found, break out */
 		if (RecPtr <= state->ReadRecPtr)
@@ -1495,6 +1494,17 @@ XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr)
 
 err:
 	XLogReaderInvalReadState(state);
+
+	/*
+	 * we may have reported errors due to invalid WAL header, propagate the
+	 * error message to the caller.
+	 */
+	if (state->errormsg_deferred)
+	{
+		if (state->errormsg_buf[0] != '\0')
+			*errormsg = state->errormsg_buf;
+		state->errormsg_deferred = false;
+	}
 
 	return InvalidXLogRecPtr;
 }

@@ -6,6 +6,7 @@ use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
+use File::Copy;
 
 program_help_ok('pg_waldump');
 program_version_ok('pg_waldump');
@@ -236,6 +237,28 @@ command_fails_like(
 	qr/error: error in WAL record at/,
 	'errors are shown with --quiet');
 
+# Wrong WAL version. We copy an existing wal file and set the
+# page's magic value to 0000.
+{
+	my $broken_wal_dir = PostgreSQL::Test::Utils::tempdir_short();
+	my $broken_wal = "$broken_wal_dir/$start_walfile";
+	copy($node->data_dir . '/pg_wal/' . $start_walfile, $broken_wal)
+		|| die "copying $start_walfile $!";
+
+	my $fh;
+	open($fh, '+<', $broken_wal);
+	sysseek($fh, 0, 0)
+		or BAIL_OUT("sysseek failed: $!");
+	syswrite($fh, pack("S", 0))
+		or BAIL_OUT("syswrite failed: $!");
+	close($fh);
+
+	command_fails_like(
+		[ 'pg_waldump', $broken_wal ],
+			qr/invalid magic number 0000/i,
+			'detailed error message shown for invalid WAL page magic'
+	);
+}
 
 # Test for: Display a message that we're skipping data if `from`
 # wasn't a pointer to the start of a record.
